@@ -52,6 +52,7 @@ Tag pushes create GitHub Release assets for Linux and macOS on `amd64` and `arm6
 - Health endpoint: `GET /__admin/health`.
 - Readiness endpoint: `GET /__admin/ready`.
 - Docker image build via `docker build -t vimock:dev .`.
+- HTTP/1.1, HTTP/2 and unencrypted HTTP/2 server transport base.
 - In-memory WireMock mapping storage.
 - Admin API: `GET /__admin/mappings`.
 - Admin API: `GET /__admin/mappings/{id}`.
@@ -87,7 +88,11 @@ Tag pushes create GitHub Release assets for Linux and macOS on `amd64` and `arm6
 - Legacy file upload create endpoint: `POST /api/tus/{file}?override=true`.
 - Legacy file upload bytes endpoint: `PATCH /api/tus/{file}?override=true`.
 - `Upload-Metadata` filename parsing for current autotest file upload workflow.
-- gRPC extension reset compatibility hook: `POST /__admin/ext/grpc/reset`.
+- gRPC descriptor Admin API: `GET /__admin/ext/grpc/descriptors`.
+- gRPC descriptor Admin API: `PUT /__admin/ext/grpc/descriptors/{fileName}`.
+- gRPC descriptor Admin API: `DELETE /__admin/ext/grpc/descriptors/{fileName}`.
+- gRPC descriptor registry reload: `POST /__admin/ext/grpc/reset`.
+- Legacy `.dsc` and `.desc` file uploads feed the gRPC descriptor registry when the uploaded bytes are valid `FileDescriptorSet` data.
 - WireMock-like 404 response for unmatched requests.
 
 ## TODO
@@ -98,7 +103,9 @@ Tag pushes create GitHub Release assets for Linux and macOS on `amd64` and `arm6
 - Full TUS protocol beyond the current autotest upload workflow.
 - Static or persistent body file storage.
 - Recording and snapshotting.
-- Native gRPC descriptor Admin API and gRPC stubbing.
+- gRPC request/response protobuf conversion and gRPC stubbing runtime.
+- gRPC reflection over loaded descriptors.
+- `.proto` source compilation for the gRPC descriptor registry.
 - GraphQL matcher support.
 - Black-box API autotests.
 - Final 90% unit test coverage gate.
@@ -115,12 +122,13 @@ Tag pushes create GitHub Release assets for Linux and macOS on `amd64` and `arm6
 - [Step 8: Proxy and delays](docs/step-08-proxy-and-delays.md)
 - [Step 9: Stateful scenarios](docs/step-09-stateful-scenarios.md)
 - [Step 10: Runtime-generated workflow](docs/step-10-runtime-generated-workflow.md)
+- [Step 11: gRPC descriptor registry](docs/step-11-grpc-descriptor-registry.md)
 
 ## Scope guardrails
 
-The current implementation is incremental. It includes the service bootstrap, port configuration, stdout logging, health/readiness endpoints, Admin API CRUD for mappings, basic HTTP stubbing, request matching needed by current mocks, targeted response templating, in-memory body files, proxy fallback, delays, stateful scenarios, runtime-generated mapping lifecycle checks, and the legacy file upload workflow used by current autotests.
+The current implementation is incremental. It includes the service bootstrap, port configuration, stdout logging, health/readiness endpoints, Admin API CRUD for mappings, basic HTTP stubbing, request matching needed by current mocks, targeted response templating, in-memory body files, proxy fallback, delays, stateful scenarios, runtime-generated mapping lifecycle checks, the legacy file upload workflow used by current autotests, and the gRPC descriptor registry foundation.
 
-Advanced request matching beyond current fixtures, full WireMock response templating, full TUS support, recording, gRPC, and GraphQL are intentionally added in separate increments described in `plan.md`.
+Advanced request matching beyond current fixtures, full WireMock response templating, full TUS support, recording, gRPC runtime execution, and GraphQL are intentionally added in separate increments described in `plan.md`.
 
 ## License
 

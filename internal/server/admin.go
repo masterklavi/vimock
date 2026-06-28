@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 
+	"vimock/internal/grpcdesc"
 	"vimock/internal/mapping"
 	"vimock/internal/scenario"
 )
@@ -13,8 +14,9 @@ import (
 const maxMappingBodySize = 32 << 20
 
 type adminAPI struct {
-	mappings  *mapping.Store
-	scenarios *scenario.Store
+	mappings    *mapping.Store
+	scenarios   *scenario.Store
+	descriptors *grpcdesc.Store
 }
 
 type listMappingsResponse struct {
@@ -126,7 +128,74 @@ func (a adminAPI) resetScenarios(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{})
 }
 
+type grpcDescriptorsResponse struct {
+	Descriptors []grpcdesc.FileInfo `json:"descriptors"`
+	Registry    grpcdesc.Registry   `json:"registry"`
+	Meta        metaResponse        `json:"meta"`
+}
+
+func (a adminAPI) listGRPCDescriptors(w http.ResponseWriter, _ *http.Request) {
+	descriptors, registry := a.descriptors.List()
+	writeJSON(w, http.StatusOK, grpcDescriptorsResponse{
+		Descriptors: descriptors,
+		Registry:    registry,
+		Meta: metaResponse{
+			Total: len(descriptors),
+		},
+	})
+}
+
+func (a adminAPI) putGRPCDescriptor(w http.ResponseWriter, r *http.Request) {
+	fileName := r.PathValue("fileName")
+	r.Body = http.MaxBytesReader(w, r.Body, maxUploadedFileSize)
+	defer r.Body.Close()
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			writeAPIError(w, http.StatusRequestEntityTooLarge, fmt.Sprintf("descriptor body exceeds %d bytes", maxUploadedFileSize))
+			return
+		}
+		writeAPIError(w, http.StatusBadRequest, fmt.Sprintf("read descriptor body: %v", err))
+		return
+	}
+
+	replaced, err := a.descriptors.Put(fileName, body)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	descriptors, registry := a.descriptors.List()
+	status := http.StatusCreated
+	if replaced {
+		status = http.StatusOK
+	}
+	writeJSON(w, status, grpcDescriptorsResponse{
+		Descriptors: descriptors,
+		Registry:    registry,
+		Meta: metaResponse{
+			Total: len(descriptors),
+		},
+	})
+}
+
+func (a adminAPI) deleteGRPCDescriptor(w http.ResponseWriter, r *http.Request) {
+	fileName := r.PathValue("fileName")
+	if ok := a.descriptors.Delete(fileName); !ok {
+		writeAPIError(w, http.StatusNotFound, fmt.Sprintf("No gRPC descriptor found with name %s", fileName))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{})
+}
+
 func (a adminAPI) resetGRPC(w http.ResponseWriter, _ *http.Request) {
+	if _, err := a.descriptors.Reset(); err != nil {
+		writeAPIError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	w.WriteHeader(http.StatusOK)
 }
 

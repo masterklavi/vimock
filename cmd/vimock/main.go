@@ -32,15 +32,21 @@ func main() {
 		return
 	}
 
+	protocols := new(http.Protocols)
+	protocols.SetHTTP1(true)
+	protocols.SetHTTP2(true)
+	protocols.SetUnencryptedHTTP2(true)
+
 	httpServer := &http.Server{
 		Addr:              cfg.Addr(),
 		Handler:           server.NewHandler(logger),
 		ReadHeaderTimeout: 5 * time.Second,
+		Protocols:         protocols,
 	}
 
 	errCh := make(chan error, 1)
 	go func() {
-		logger.Info("starting vimock", "addr", cfg.Addr())
+		logger.Info("starting vimock", "addr", cfg.Addr(), "protocols", protocols.String())
 		errCh <- httpServer.ListenAndServe()
 	}()
 

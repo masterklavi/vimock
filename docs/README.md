@@ -13,3 +13,4 @@ This folder contains simple step-by-step documentation for implemented increment
 - [Step 8: Proxy and delays](step-08-proxy-and-delays.md)
 - [Step 9: Stateful scenarios](step-09-stateful-scenarios.md)
 - [Step 10: Runtime-generated workflow](step-10-runtime-generated-workflow.md)
+- [Step 11: gRPC descriptor registry](step-11-grpc-descriptor-registry.md)

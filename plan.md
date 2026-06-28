@@ -931,14 +931,63 @@ curl -X POST http://localhost:8080/__admin/ext/grpc/reset
 Отчет ИИ по шагу 11:
 
 ```text
-Статус: TODO
+Статус: DONE
 Сделано:
+- Включена transport base конфигурация HTTP/1.1, HTTP/2 и unencrypted HTTP/2 для будущего gRPC runtime.
+- Добавлен in-memory gRPC descriptor registry с отдельным namespace от body files.
+- Реализована загрузка, список и удаление descriptor files через Admin API.
+- `.dsc` и `.desc` валидируются как protobuf FileDescriptorSet.
+- `.proto` принимаются как UTF-8 source files, но пока не компилируются в active registry.
+- `POST /__admin/ext/grpc/reset` атомарно пересобирает active registry из загруженных `.dsc`/`.desc` и сохраняет совместимый HTTP 200 с пустым телом.
+- Active registry предоставляет lookup service/message type для последующего protobuf JSON runtime.
+- Legacy upload `.dsc`/`.desc` теперь дополнительно синхронизирует валидные descriptor sets в gRPC registry, не ломая совместимость для невалидных legacy uploads.
+- Добавлены unit/in-process API tests на upload/list/delete/reset, invalid descriptors и legacy bridge.
+- README и docs обновлены по шагу 11.
+
 Измененные файлы:
+- `cmd/vimock/main.go`
+- `go.mod`
+- `go.sum`
+- `internal/grpcdesc/store.go`
+- `internal/grpcdesc/store_test.go`
+- `internal/server/admin.go`
+- `internal/server/file_api.go`
+- `internal/server/server.go`
+- `internal/server/grpc_descriptor_test.go`
+- `README.md`
+- `docs/README.md`
+- `docs/step-11-grpc-descriptor-registry.md`
+- `plan.md`
+
 Как запускать:
+- `go run ./cmd/vimock`
+- `curl -i -X PUT --data-binary @testdata/mc_product.dsc http://localhost:8080/__admin/ext/grpc/descriptors/mc_product.dsc`
+- `curl -s http://localhost:8080/__admin/ext/grpc/descriptors`
+- `curl -i -X POST http://localhost:8080/__admin/ext/grpc/reset`
+- `curl -i -X DELETE http://localhost:8080/__admin/ext/grpc/descriptors/mc_product.dsc`
+
 Проверки и результаты:
+- `GOCACHE=/Users/vseiinstrumentyru/GolandProjects/vimock/.gocache go test ./...` - passed.
+- `GOCACHE=/Users/vseiinstrumentyru/GolandProjects/vimock/.gocache go test -race ./internal/grpcdesc ./internal/server` - passed.
+- `GOCACHE=/Users/vseiinstrumentyru/GolandProjects/vimock/.gocache go test -coverprofile=coverage.out ./...` - passed, total coverage 73.6%.
+
 Покрытые требования:
+- PROTO-003, PROTO-004: descriptor/proto upload API foundation добавлен.
+- GRPC-001, GRPC-002: подготовлена gRPC/HTTP2 transport base и registry foundation.
+- GRPC-011, GRPC-012, GRPC-013, GRPC-014, GRPC-015, GRPC-016, GRPC-017, GRPC-018: заложен descriptor registry, reload и type registry foundation для последующего gRPC JSON/protobuf runtime.
+- FILE-011: legacy `.dsc`/`.desc` upload связан с descriptor registry.
+
 Known gaps:
+- Protobuf request/response conversion не реализован, это scope шага 12.
+- gRPC service/method dispatch не реализован, это scope шага 12.
+- gRPC reflection пока не реализован.
+- `.proto` source compilation пока не реализован; `.proto` хранится и отображается в API как source, но не попадает в active registry.
+- Если после reset сервис/метод отсутствует в descriptors, фактический gRPC `UNIMPLEMENTED` будет реализован вместе с runtime handler.
+
 Риски/решения:
+- Использован `google.golang.org/protobuf` как базовая зависимость для FileDescriptorSet, protodesc и dynamicpb type registry.
+- Active registry заменяется целиком под mutex, чтобы reset был атомарным для будущих runtime readers.
+- Invalid legacy descriptor uploads игнорируются registry, но не ломают legacy file workflow.
 ```
 
 ## Шаг 12. gRPC stubbing runtime

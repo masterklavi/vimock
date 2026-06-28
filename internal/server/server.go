@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"vimock/internal/files"
+	"vimock/internal/grpcdesc"
 	"vimock/internal/mapping"
 	"vimock/internal/proxy"
 	"vimock/internal/response"
@@ -28,6 +29,10 @@ func NewHandlerWithStore(logger *slog.Logger, mappings *mapping.Store) http.Hand
 }
 
 func NewHandlerWithStores(logger *slog.Logger, mappings *mapping.Store, fileStore files.Store) http.Handler {
+	return NewHandlerWithStoresAndDescriptors(logger, mappings, fileStore, grpcdesc.NewStore())
+}
+
+func NewHandlerWithStoresAndDescriptors(logger *slog.Logger, mappings *mapping.Store, fileStore files.Store, descriptorStore *grpcdesc.Store) http.Handler {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -37,6 +42,9 @@ func NewHandlerWithStores(logger *slog.Logger, mappings *mapping.Store, fileStor
 	if fileStore == nil {
 		fileStore = files.NewMemoryStore()
 	}
+	if descriptorStore == nil {
+		descriptorStore = grpcdesc.NewStore()
+	}
 
 	scenarios := scenario.NewStore()
 	for _, stub := range mappings.List() {
@@ -44,10 +52,14 @@ func NewHandlerWithStores(logger *slog.Logger, mappings *mapping.Store, fileStor
 	}
 
 	admin := adminAPI{
-		mappings:  mappings,
-		scenarios: scenarios,
+		mappings:    mappings,
+		scenarios:   scenarios,
+		descriptors: descriptorStore,
 	}
-	filesAPI := fileAPI{files: fileStore}
+	filesAPI := fileAPI{
+		files:       fileStore,
+		descriptors: descriptorStore,
+	}
 	runtime := runtimeAPI{
 		mappings: mappings,
 		renderer: response.NewRenderer(fileStore),
@@ -65,6 +77,9 @@ func NewHandlerWithStores(logger *slog.Logger, mappings *mapping.Store, fileStor
 	mux.HandleFunc("PUT /__admin/mappings/{id}", admin.updateMapping)
 	mux.HandleFunc("DELETE /__admin/mappings/{id}", admin.deleteMapping)
 	mux.HandleFunc("POST /__admin/scenarios/reset", admin.resetScenarios)
+	mux.HandleFunc("GET /__admin/ext/grpc/descriptors", admin.listGRPCDescriptors)
+	mux.HandleFunc("PUT /__admin/ext/grpc/descriptors/{fileName}", admin.putGRPCDescriptor)
+	mux.HandleFunc("DELETE /__admin/ext/grpc/descriptors/{fileName}", admin.deleteGRPCDescriptor)
 	mux.HandleFunc("POST /__admin/ext/grpc/reset", admin.resetGRPC)
 	mux.HandleFunc("POST /api/login", filesAPI.login)
 	mux.HandleFunc("POST /api/tus/{file}", filesAPI.createUpload)

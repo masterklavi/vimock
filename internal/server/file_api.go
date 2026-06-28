@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"vimock/internal/files"
+	"vimock/internal/grpcdesc"
 )
 
 const (
@@ -19,7 +20,8 @@ const (
 )
 
 type fileAPI struct {
-	files files.Store
+	files       files.Store
+	descriptors *grpcdesc.Store
 }
 
 func (a fileAPI) login(w http.ResponseWriter, _ *http.Request) {
@@ -79,6 +81,9 @@ func (a fileAPI) patchUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	a.files.Put(fileName, data)
+	if a.descriptors != nil {
+		a.descriptors.PutLegacy(fileName, data)
+	}
 	w.Header().Set("Tus-Resumable", "1.0.0")
 	w.Header().Set("Upload-Offset", strconv.Itoa(len(data)))
 	w.WriteHeader(http.StatusNoContent)
