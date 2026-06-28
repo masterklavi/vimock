@@ -111,6 +111,41 @@ func TestStoreRangeIteratesSnapshotWithoutExposingListCopy(t *testing.T) {
 	}
 }
 
+func TestStoreRangeCandidatesUsesExactIndexesAndFallback(t *testing.T) {
+	store := NewStore()
+	exactURL := store.Create(parseMappingJSON(t, `{
+	  "name": "exact-url",
+	  "request": {"method": "GET", "url": "/resource?id=1"},
+	  "response": {"status": 200}
+	}`))
+	exactPath := store.Create(parseMappingJSON(t, `{
+	  "name": "exact-path",
+	  "request": {"method": "ANY", "urlPath": "/resource"},
+	  "response": {"status": 200}
+	}`))
+	regex := store.Create(parseMappingJSON(t, `{
+	  "name": "regex",
+	  "request": {"method": "GET", "urlPathPattern": "/resource/.*"},
+	  "response": {"status": 200}
+	}`))
+	store.Create(parseMappingJSON(t, `{
+	  "name": "other",
+	  "request": {"method": "POST", "urlPath": "/other"},
+	  "response": {"status": 200}
+	}`))
+
+	var ids []string
+	store.RangeCandidates("GET", "/resource?id=1", "/resource", func(stub Mapping) bool {
+		ids = append(ids, stub.ID())
+		return true
+	})
+
+	want := []string{exactURL.ID(), exactPath.ID(), regex.ID()}
+	if fmt.Sprint(ids) != fmt.Sprint(want) {
+		t.Fatalf("candidate ids = %v, want %v", ids, want)
+	}
+}
+
 func mustParseMapping(t *testing.T, name string) Mapping {
 	t.Helper()
 
@@ -119,6 +154,16 @@ func mustParseMapping(t *testing.T, name string) Mapping {
 	  "request": {"method": "GET", "url": "/%s"},
 	  "response": {"status": 200}
 	}`, name, name)))
+	if err != nil {
+		t.Fatalf("ParseJSON(): %v", err)
+	}
+	return stub
+}
+
+func parseMappingJSON(t *testing.T, body string) Mapping {
+	t.Helper()
+
+	stub, err := ParseJSON([]byte(body))
 	if err != nil {
 		t.Fatalf("ParseJSON(): %v", err)
 	}

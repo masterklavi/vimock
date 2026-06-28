@@ -40,28 +40,27 @@ func (a runtimeAPI) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		a.writeNoMatch(w, r)
-		return
-	}
-
-	bodyContext := matcher.NewBodyContext(body)
-	stub, ok := a.findMatch(r, bodyContext)
+	bodyCache := newRequestBodyCache(r)
+	stub, ok := a.findMatchLazy(r, bodyCache.context)
 	if !ok {
-		if a.tryServeRecordingProxy(w, r, body) {
+		if a.tryServeRecordingProxy(w, r, bodyCache) {
 			return
 		}
 		a.writeNoMatch(w, r)
 		return
 	}
 
-	responseDefinition := stub.Response()
+	responseDefinition := stub.RuntimeResponse()
 	if err := a.sleep(r.Context(), delay.InitialDuration(responseDefinition, nil)); err != nil {
 		return
 	}
 
 	if responseDefinition.ProxyBaseURL != "" {
+		body, err := bodyCache.bytes()
+		if err != nil {
+			a.writeNoMatch(w, r)
+			return
+		}
 		proxied, err := a.forwarder.Forward(r.Context(), r, body, responseDefinition)
 		if err != nil {
 			writeProxyError(w, err)
@@ -72,17 +71,25 @@ func (a runtimeAPI) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	bodyContext := (*matcher.BodyContext)(nil)
+	if responseDefinition.Body != nil && responseDefinition.UsesResponseTemplate() {
+		bodyContext = bodyCache.context()
+		if bodyContext == nil {
+			a.writeNoMatch(w, r)
+			return
+		}
+	}
 	rendered, err := a.renderer.Render(responseDefinition, bodyContext)
 	if err != nil {
 		writeResponseRenderError(w, err)
 		return
 	}
 
-	a.recordServeEvent(r, body, rendered.Status, rendered.Headers, rendered.Body, recording.SourceStub)
+	a.recordServeEvent(r, bodyCache.bytesForRecording(), rendered.Status, rendered.Headers, rendered.Body, recording.SourceStub)
 	writeStubResponse(w, r, rendered, responseDefinition, a.sleep)
 }
 
-func (a runtimeAPI) tryServeRecordingProxy(w http.ResponseWriter, r *http.Request, body []byte) bool {
+func (a runtimeAPI) tryServeRecordingProxy(w http.ResponseWriter, r *http.Request, bodyCache *requestBodyCache) bool {
 	if a.recorder == nil {
 		return false
 	}
@@ -91,6 +98,11 @@ func (a runtimeAPI) tryServeRecordingProxy(w http.ResponseWriter, r *http.Reques
 		return false
 	}
 
+	body, err := bodyCache.bytes()
+	if err != nil {
+		writeProxyError(w, err)
+		return true
+	}
 	proxied, err := a.forwarder.Forward(r.Context(), r, body, mapping.ResponseDefinition{
 		ProxyBaseURL: spec.TargetBaseURL,
 	})
@@ -129,14 +141,44 @@ func newServeEvent(r *http.Request, requestBody []byte, responseStatus int, resp
 }
 
 func (a runtimeAPI) findMatch(r *http.Request, body *matcher.BodyContext) (mapping.Mapping, bool) {
+	return a.findMatchLazy(r, func() *matcher.BodyContext {
+		return body
+	})
+}
+
+func (a runtimeAPI) findMatchLazy(r *http.Request, body func() *matcher.BodyContext) (mapping.Mapping, bool) {
 	requestURI := r.URL.RequestURI()
 	path := r.URL.Path
-	query := r.URL.Query()
 	headers := r.Header
+	var query map[string][]string
+	var queryLoaded bool
+	queryProvider := func() map[string][]string {
+		if !queryLoaded {
+			query = r.URL.Query()
+			queryLoaded = true
+		}
+		return query
+	}
+
+	if a.scenarios == nil || !a.mappings.HasScenarios() {
+		var selected mapping.Mapping
+		var found bool
+		a.mappings.RangeCandidates(r.Method, requestURI, path, func(stub mapping.Mapping) bool {
+			if !stub.Request().MatchesLazy(r.Method, requestURI, path, queryProvider, headers, body) {
+				return true
+			}
+			if !found || compareStubOrder(stub, selected) < 0 {
+				selected = stub
+				found = true
+			}
+			return true
+		})
+		return selected, found
+	}
 
 	candidates := make([]mapping.Mapping, 0)
-	a.mappings.Range(func(stub mapping.Mapping) bool {
-		if !stub.Request().Matches(r.Method, requestURI, path, query, headers, body) {
+	a.mappings.RangeCandidates(r.Method, requestURI, path, func(stub mapping.Mapping) bool {
+		if !stub.Request().MatchesLazy(r.Method, requestURI, path, queryProvider, headers, body) {
 			return true
 		}
 		candidates = append(candidates, stub)
@@ -147,6 +189,56 @@ func (a runtimeAPI) findMatch(r *http.Request, body *matcher.BodyContext) (mappi
 		return selectBestStub(candidates)
 	}
 	return a.scenarios.SelectAndTransition(candidates, compareStubOrder)
+}
+
+type requestBodyCache struct {
+	request      *http.Request
+	body         []byte
+	contextValue *matcher.BodyContext
+	err          error
+	read         bool
+}
+
+func newRequestBodyCache(r *http.Request) *requestBodyCache {
+	return &requestBodyCache{request: r}
+}
+
+func (c *requestBodyCache) bytes() ([]byte, error) {
+	if c.read {
+		return c.body, c.err
+	}
+	c.read = true
+	if c.request.Body == nil || c.request.Body == http.NoBody {
+		return nil, nil
+	}
+	c.body, c.err = io.ReadAll(c.request.Body)
+	return c.body, c.err
+}
+
+func (c *requestBodyCache) context() *matcher.BodyContext {
+	if c.contextValue != nil {
+		return c.contextValue
+	}
+	body, err := c.bytes()
+	if err != nil {
+		return nil
+	}
+	c.contextValue = matcher.NewBodyContext(body)
+	return c.contextValue
+}
+
+func (c *requestBodyCache) bytesForRecording() []byte {
+	if c.read {
+		return c.body
+	}
+	if c.request.Body == nil || c.request.Body == http.NoBody || c.request.ContentLength == 0 {
+		return nil
+	}
+	body, err := c.bytes()
+	if err != nil {
+		return nil
+	}
+	return body
 }
 
 func compareStubOrder(left, right mapping.Mapping) int {

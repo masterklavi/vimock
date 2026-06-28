@@ -56,11 +56,22 @@ type ResponseDefinition struct {
 	JSON                   bool
 	BodyFile               string
 	Transformers           []string
+	Template               *ResponseTemplate
 	ProxyBaseURL           string
 	ProxyURLPrefixToRemove string
 	FixedDelayMilliseconds int
 	DelayDistribution      *DelayDistribution
 	ChunkedDribbleDelay    *ChunkedDribbleDelay
+}
+
+type ResponseTemplate struct {
+	Segments []ResponseTemplateSegment
+}
+
+type ResponseTemplateSegment struct {
+	Literal  []byte
+	JSONPath matcher.JSONPath
+	Helper   bool
 }
 
 type DelayDistribution struct {
@@ -206,12 +217,25 @@ func (m Mapping) Response() ResponseDefinition {
 		JSON:                   m.response.JSON,
 		BodyFile:               m.response.BodyFile,
 		Transformers:           append([]string(nil), m.response.Transformers...),
+		Template:               cloneResponseTemplate(m.response.Template),
 		ProxyBaseURL:           m.response.ProxyBaseURL,
 		ProxyURLPrefixToRemove: m.response.ProxyURLPrefixToRemove,
 		FixedDelayMilliseconds: m.response.FixedDelayMilliseconds,
 		DelayDistribution:      cloneDelayDistribution(m.response.DelayDistribution),
 		ChunkedDribbleDelay:    cloneChunkedDribbleDelay(m.response.ChunkedDribbleDelay),
 	}
+}
+
+func (m Mapping) RuntimeResponse() ResponseDefinition {
+	return m.response
+}
+
+func (d ResponseDefinition) UsesResponseTemplate() bool {
+	return d.Template != nil || hasResponseTemplateTransformer(d.Transformers)
+}
+
+func (d ResponseDefinition) RequiresRequestBody() bool {
+	return d.ProxyBaseURL != "" || (d.Body != nil && d.UsesResponseTemplate())
 }
 
 func (m Mapping) WithID(id string) (Mapping, error) {
@@ -440,24 +464,46 @@ func parseBodyPatterns(raw json.RawMessage) ([]matcher.BodyPattern, error) {
 	return patterns, nil
 }
 
+func (p RequestPattern) UsesQuery() bool {
+	return len(p.QueryParameters) > 0
+}
+
+func (p RequestPattern) RequiresBody() bool {
+	return len(p.BodyPatterns) > 0 || p.CustomMatcher != nil
+}
+
 func (p RequestPattern) Matches(method, requestURI, path string, query map[string][]string, headers map[string][]string, body *matcher.BodyContext) bool {
+	return p.MatchesLazy(method, requestURI, path, func() map[string][]string {
+		return query
+	}, headers, func() *matcher.BodyContext {
+		return body
+	})
+}
+
+func (p RequestPattern) MatchesLazy(method, requestURI, path string, query func() map[string][]string, headers map[string][]string, body func() *matcher.BodyContext) bool {
 	if !p.matchesMethod(method) {
 		return false
 	}
 	if !p.matchesURL(requestURI, path) {
 		return false
 	}
-	if !matcher.MatchQuery(p.QueryParameters, query) {
+	if len(p.QueryParameters) > 0 && !matcher.MatchQuery(p.QueryParameters, query()) {
 		return false
 	}
 	if !matcher.MatchHeaders(p.Headers, headers) {
 		return false
 	}
-	if !matcher.MatchBodyPatternsWithContext(p.BodyPatterns, body) {
-		return false
-	}
-	if p.CustomMatcher != nil && !p.CustomMatcher.Matches(body) {
-		return false
+	if p.RequiresBody() {
+		bodyContext := body()
+		if bodyContext == nil {
+			return false
+		}
+		if !matcher.MatchBodyPatternsWithContext(p.BodyPatterns, bodyContext) {
+			return false
+		}
+		if p.CustomMatcher != nil && !p.CustomMatcher.Matches(bodyContext) {
+			return false
+		}
 	}
 	return true
 }
@@ -521,6 +567,7 @@ func parseResponse(raw json.RawMessage) (ResponseDefinition, error) {
 	if err != nil {
 		return ResponseDefinition{}, err
 	}
+	template := compileResponseTemplate(body, transformers)
 	proxyBaseURL, err := stringField(object, "proxyBaseUrl")
 	if err != nil {
 		return ResponseDefinition{}, err
@@ -552,6 +599,7 @@ func parseResponse(raw json.RawMessage) (ResponseDefinition, error) {
 		JSON:                   isJSON,
 		BodyFile:               bodyFile,
 		Transformers:           transformers,
+		Template:               template,
 		ProxyBaseURL:           proxyBaseURL,
 		ProxyURLPrefixToRemove: proxyURLPrefixToRemove,
 		FixedDelayMilliseconds: fixedDelayMilliseconds,
@@ -617,6 +665,59 @@ func parseResponseBody(object map[string]json.RawMessage) ([]byte, bool, error) 
 		return nil, false, fmt.Errorf("response.body must be a string")
 	}
 	return []byte(body), false, nil
+}
+
+var responseTemplateHelperPattern = regexp.MustCompile(`\{\{\s*jsonPath\s+request\.body\s+(?:'([^']*)'|"([^"]*)")\s*\}\}`)
+
+func compileResponseTemplate(body []byte, transformers []string) *ResponseTemplate {
+	if len(body) == 0 || !hasResponseTemplateTransformer(transformers) {
+		return nil
+	}
+
+	matches := responseTemplateHelperPattern.FindAllSubmatchIndex(body, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+
+	segments := make([]ResponseTemplateSegment, 0, len(matches)*2+1)
+	offset := 0
+	for _, match := range matches {
+		if match[0] > offset {
+			segments = append(segments, ResponseTemplateSegment{
+				Literal: body[offset:match[0]],
+			})
+		}
+
+		expressionStart, expressionEnd := match[2], match[3]
+		if expressionStart == -1 {
+			expressionStart, expressionEnd = match[4], match[5]
+		}
+		compiled, err := matcher.CompileJSONPath(string(body[expressionStart:expressionEnd]))
+		if err != nil {
+			return nil
+		}
+		segments = append(segments, ResponseTemplateSegment{
+			JSONPath: compiled,
+			Helper:   true,
+		})
+		offset = match[1]
+	}
+	if offset < len(body) {
+		segments = append(segments, ResponseTemplateSegment{
+			Literal: body[offset:],
+		})
+	}
+
+	return &ResponseTemplate{Segments: segments}
+}
+
+func hasResponseTemplateTransformer(transformers []string) bool {
+	for _, transformer := range transformers {
+		if transformer == "response-template" {
+			return true
+		}
+	}
+	return false
 }
 
 func stringRawField(raw json.RawMessage, field string) (string, error) {
@@ -763,6 +864,20 @@ func cloneHeaders(source map[string][]string) map[string][]string {
 	clone := make(map[string][]string, len(source))
 	for key, values := range source {
 		clone[key] = append([]string(nil), values...)
+	}
+	return clone
+}
+
+func cloneResponseTemplate(source *ResponseTemplate) *ResponseTemplate {
+	if source == nil {
+		return nil
+	}
+	clone := &ResponseTemplate{
+		Segments: make([]ResponseTemplateSegment, len(source.Segments)),
+	}
+	for i, segment := range source.Segments {
+		clone.Segments[i] = segment
+		clone.Segments[i].Literal = cloneBytes(segment.Literal)
 	}
 	return clone
 }

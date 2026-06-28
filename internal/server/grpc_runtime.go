@@ -92,7 +92,7 @@ func (a runtimeAPI) serveGRPC(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	definition := stub.Response()
+	definition := stub.RuntimeResponse()
 	if err := a.sleep(r.Context(), delay.InitialDuration(definition, nil)); err != nil {
 		return
 	}

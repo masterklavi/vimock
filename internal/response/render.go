@@ -35,7 +35,7 @@ func NewRenderer(fileStore files.Store) Renderer {
 func (r Renderer) Render(definition mapping.ResponseDefinition, requestBody *matcher.BodyContext) (Rendered, error) {
 	rendered := Rendered{
 		Status:  definition.Status,
-		Headers: cloneHeaders(definition.Headers),
+		Headers: http.Header(definition.Headers),
 		JSON:    definition.JSON,
 	}
 
@@ -48,24 +48,19 @@ func (r Renderer) Render(definition mapping.ResponseDefinition, requestBody *mat
 		}
 		rendered.Body = body
 	case definition.Body != nil:
-		rendered.Body = append([]byte(nil), definition.Body...)
+		rendered.Body = definition.Body
 		templatable = true
 	}
 
-	if templatable && hasResponseTemplate(definition.Transformers) && len(rendered.Body) > 0 {
-		rendered.Body = renderTemplate(rendered.Body, requestBody, definition.JSON)
+	if templatable && definition.UsesResponseTemplate() && len(rendered.Body) > 0 {
+		if definition.Template != nil {
+			rendered.Body = renderCompiledTemplate(definition.Template, requestBody, definition.JSON)
+		} else {
+			rendered.Body = renderTemplate(rendered.Body, requestBody, definition.JSON)
+		}
 	}
 
 	return rendered, nil
-}
-
-func hasResponseTemplate(transformers []string) bool {
-	for _, transformer := range transformers {
-		if transformer == "response-template" {
-			return true
-		}
-	}
-	return false
 }
 
 func renderTemplate(template []byte, requestBody *matcher.BodyContext, escapeJSONString bool) []byte {
@@ -88,6 +83,41 @@ func renderTemplate(template []byte, requestBody *matcher.BodyContext, escapeJSO
 		}
 		return []byte(value)
 	})
+}
+
+func renderCompiledTemplate(template *mapping.ResponseTemplate, requestBody *matcher.BodyContext, escapeJSONString bool) []byte {
+	if template == nil {
+		return nil
+	}
+	if requestBody == nil {
+		return nil
+	}
+	parsed, err := requestBody.Parsed()
+	if err != nil {
+		return nil
+	}
+
+	size := 0
+	for _, segment := range template.Segments {
+		size += len(segment.Literal)
+	}
+	rendered := make([]byte, 0, size)
+	for _, segment := range template.Segments {
+		if !segment.Helper {
+			rendered = append(rendered, segment.Literal...)
+			continue
+		}
+		value, ok := segment.JSONPath.FirstValue(parsed)
+		if !ok {
+			continue
+		}
+		renderedValue := stringify(value)
+		if escapeJSONString {
+			renderedValue = escapeJSONStringContent(renderedValue)
+		}
+		rendered = append(rendered, renderedValue...)
+	}
+	return rendered
 }
 
 func escapeJSONStringContent(value string) string {
@@ -127,12 +157,4 @@ func stringify(value any) string {
 		}
 		return fmt.Sprint(typed)
 	}
-}
-
-func cloneHeaders(source map[string][]string) http.Header {
-	headers := make(http.Header, len(source))
-	for name, values := range source {
-		headers[name] = append([]string(nil), values...)
-	}
-	return headers
 }

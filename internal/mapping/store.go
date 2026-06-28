@@ -1,13 +1,23 @@
 package mapping
 
 import (
+	"strings"
 	"sync"
 	"sync/atomic"
 )
 
 type snapshot struct {
-	mappings []Mapping
-	byID     map[string]Mapping
+	mappings     []Mapping
+	byID         map[string]Mapping
+	byExactURL   map[requestIndexKey][]Mapping
+	byExactPath  map[requestIndexKey][]Mapping
+	fallback     []Mapping
+	hasScenarios bool
+}
+
+type requestIndexKey struct {
+	method string
+	target string
 }
 
 // Store keeps mappings in memory and publishes immutable snapshots for lock-free reads.
@@ -25,8 +35,11 @@ func NewStore() *Store {
 		order: make([]string, 0),
 	}
 	store.snapshot.Store(snapshot{
-		mappings: []Mapping{},
-		byID:     map[string]Mapping{},
+		mappings:    []Mapping{},
+		byID:        map[string]Mapping{},
+		byExactURL:  map[requestIndexKey][]Mapping{},
+		byExactPath: map[requestIndexKey][]Mapping{},
+		fallback:    []Mapping{},
 	})
 	return store
 }
@@ -45,6 +58,15 @@ func (s *Store) Range(yield func(Mapping) bool) {
 			return
 		}
 	}
+}
+
+func (s *Store) RangeCandidates(method, requestURI, path string, yield func(Mapping) bool) {
+	current := s.loadSnapshot()
+	current.rangeCandidates(method, requestURI, path, yield)
+}
+
+func (s *Store) HasScenarios() bool {
+	return s.loadSnapshot().hasScenarios
 }
 
 func (s *Store) Get(id string) (Mapping, bool) {
@@ -120,6 +142,10 @@ func (s *Store) loadSnapshot() snapshot {
 func (s *Store) publishLocked() {
 	mappings := make([]Mapping, 0, len(s.order))
 	byID := make(map[string]Mapping, len(s.byID))
+	byExactURL := make(map[requestIndexKey][]Mapping)
+	byExactPath := make(map[requestIndexKey][]Mapping)
+	fallback := make([]Mapping, 0)
+	hasScenarios := false
 
 	for _, id := range s.order {
 		mapping, ok := s.byID[id]
@@ -128,10 +154,59 @@ func (s *Store) publishLocked() {
 		}
 		mappings = append(mappings, mapping)
 		byID[id] = mapping
+		if mapping.ScenarioName() != "" {
+			hasScenarios = true
+		}
+		indexMapping(mapping, byExactURL, byExactPath, &fallback)
 	}
 
 	s.snapshot.Store(snapshot{
-		mappings: mappings,
-		byID:     byID,
+		mappings:     mappings,
+		byID:         byID,
+		byExactURL:   byExactURL,
+		byExactPath:  byExactPath,
+		fallback:     fallback,
+		hasScenarios: hasScenarios,
 	})
+}
+
+func indexMapping(stub Mapping, byExactURL, byExactPath map[requestIndexKey][]Mapping, fallback *[]Mapping) {
+	request := stub.request
+	method := request.Method
+	switch {
+	case request.URL != "":
+		key := requestIndexKey{method: method, target: request.URL}
+		byExactURL[key] = append(byExactURL[key], stub)
+	case request.URLPath != "":
+		key := requestIndexKey{method: method, target: request.URLPath}
+		byExactPath[key] = append(byExactPath[key], stub)
+	default:
+		*fallback = append(*fallback, stub)
+	}
+}
+
+func (s snapshot) rangeCandidates(method, requestURI, path string, yield func(Mapping) bool) {
+	method = strings.ToUpper(method)
+	if !rangeMappingList(s.byExactURL[requestIndexKey{method: method, target: requestURI}], yield) {
+		return
+	}
+	if method != "ANY" && !rangeMappingList(s.byExactURL[requestIndexKey{method: "ANY", target: requestURI}], yield) {
+		return
+	}
+	if !rangeMappingList(s.byExactPath[requestIndexKey{method: method, target: path}], yield) {
+		return
+	}
+	if method != "ANY" && !rangeMappingList(s.byExactPath[requestIndexKey{method: "ANY", target: path}], yield) {
+		return
+	}
+	rangeMappingList(s.fallback, yield)
+}
+
+func rangeMappingList(mappings []Mapping, yield func(Mapping) bool) bool {
+	for _, mapping := range mappings {
+		if !yield(mapping) {
+			return false
+		}
+	}
+	return true
 }

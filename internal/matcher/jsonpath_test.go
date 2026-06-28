@@ -124,6 +124,22 @@ func TestEqualToMatchers(t *testing.T) {
 	}
 }
 
+func TestJSONPathFirstValue(t *testing.T) {
+	compiled, err := CompileJSONPath("$.payload.items[1].name")
+	if err != nil {
+		t.Fatalf("CompileJSONPath() error = %v", err)
+	}
+	body := mustParseJSON(t, []byte(`{"payload":{"items":[{"name":"first"},{"name":"second"}]}}`))
+
+	got, ok := compiled.FirstValue(body)
+	if !ok {
+		t.Fatal("FirstValue() ok = false, want true")
+	}
+	if got != "second" {
+		t.Fatalf("FirstValue() = %v, want second", got)
+	}
+}
+
 func mustParseJSON(t *testing.T, body []byte) any {
 	t.Helper()
 

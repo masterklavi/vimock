@@ -104,6 +104,17 @@ func (p JSONPath) Values(root any) []any {
 	return values
 }
 
+func (p JSONPath) FirstValue(root any) (any, bool) {
+	if p.filter != nil {
+		values := p.Values(root)
+		if len(values) == 0 {
+			return nil, false
+		}
+		return values[0], true
+	}
+	return firstPathValue(root, p.path)
+}
+
 func ParseJSON(data []byte) (any, error) {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.UseNumber()
@@ -261,6 +272,49 @@ func evalPath(nodes []any, tokens []pathToken) []any {
 		}
 	}
 	return current
+}
+
+func firstPathValue(root any, tokens []pathToken) (any, bool) {
+	current := root
+	for _, token := range tokens {
+		switch token.kind {
+		case tokenField:
+			object, ok := current.(map[string]any)
+			if !ok {
+				return nil, false
+			}
+			value, exists := object[token.field]
+			if !exists {
+				return nil, false
+			}
+			current = value
+		case tokenIndex:
+			array, ok := current.([]any)
+			if !ok || token.index < 0 || token.index >= len(array) {
+				return nil, false
+			}
+			current = array[token.index]
+		case tokenWildcard:
+			switch value := current.(type) {
+			case []any:
+				if len(value) == 0 {
+					return nil, false
+				}
+				current = value[0]
+			case map[string]any:
+				if len(value) == 0 {
+					return nil, false
+				}
+				for _, item := range value {
+					current = item
+					break
+				}
+			default:
+				return nil, false
+			}
+		}
+	}
+	return current, true
 }
 
 func filterCandidates(node any) []any {
