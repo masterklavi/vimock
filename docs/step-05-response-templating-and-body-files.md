@@ -17,7 +17,6 @@ This step implements only the response pipeline needed by current mocks.
 The following WireMock features are not complete yet:
 
 - Full Handlebars response template compatibility.
-- Admin or legacy HTTP upload API for body files.
 - Persistent or static body file loading from disk.
 - gRPC descriptor conversion.
 
@@ -98,7 +97,7 @@ Content-Type: application/json
 }
 ```
 
-At this step files can be provided by code through the in-memory store. HTTP upload APIs are planned for Step 6.
+At this step files can be provided by code through the in-memory store. Legacy HTTP upload APIs are covered by Step 6.
 
 ## Tests
 

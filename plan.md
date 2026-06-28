@@ -502,20 +502,76 @@ Known gaps:
 ```bash
 go test ./...
 curl -i -X POST http://localhost:8080/api/login
-curl -i -X POST 'http://localhost:8080/api/tus/mc_product.dsc?override=true' -H 'Tus-Resumable: 1.0.0' -H 'Upload-Length: 10' -H 'Upload-Metadata: filename 6d635f70726f647563742e647363' -H 'X-Auth: token'
+curl -i -X POST 'http://localhost:8080/api/tus/mc_product.dsc?override=true' -H 'Tus-Resumable: 1.0.0' -H 'Upload-Length: 40026' -H 'Upload-Metadata: filename 6d635f70726f647563742e647363' -H 'X-Auth: vimock-file-token'
+curl -i -X PATCH 'http://localhost:8080/api/tus/mc_product.dsc?override=true' -H 'Content-Type: application/offset+octet-stream' -H 'Tus-Resumable: 1.0.0' -H 'Upload-Offset: 0' -H 'X-Auth: vimock-file-token' --data-binary @testdata/mc_product.dsc
 ```
 
 Отчет ИИ по шагу 6:
 
 ```text
-Статус: TODO
+Статус: DONE
+
 Сделано:
+- Реализован `POST /api/login` для legacy file upload workflow.
+- Реализован `POST /api/tus/{file}?override=true` для инициализации upload.
+- Реализован `PATCH /api/tus/{file}?override=true` для загрузки bytes.
+- Добавлена проверка `X-Auth` token на upload endpoints.
+- Добавлен parsing `Upload-Metadata: filename <hex>`.
+- Uploaded bytes сохраняются в общий in-memory `files.Store`.
+- Проверено, что загруженный файл можно вернуть через `response.bodyFileName`.
+- Добавлен `POST /__admin/ext/grpc/reset` как no-op compatibility hook с HTTP 200 и пустым телом.
+- Добавлены tests на happy path из `upload_file_to_wiremock()` и validation errors.
+- Добавлен реальный descriptor fixture `testdata/mc_product.dsc` для локального запуска upload examples.
+- Обновлены README и docs по шагу 6.
+
 Измененные файлы:
+- `internal/server/file_api.go`
+- `internal/server/file_api_test.go`
+- `internal/server/server.go`
+- `internal/server/admin.go`
+- `README.md`
+- `docs/README.md`
+- `docs/step-05-response-templating-and-body-files.md`
+- `docs/step-06-legacy-file-api.md`
+- `testdata/mc_product.dsc`
+- `plan.md`
+
 Как запускать:
+- `go run ./cmd/vimock`
+- `curl -i -X POST http://localhost:8080/api/login`
+- `curl -i -X POST 'http://localhost:8080/api/tus/mc_product.dsc?override=true' -H 'Tus-Resumable: 1.0.0' -H 'Upload-Length: 40026' -H 'Upload-Metadata: filename 6d635f70726f647563742e647363' -H 'X-Auth: vimock-file-token'`
+- `curl -i -X PATCH 'http://localhost:8080/api/tus/mc_product.dsc?override=true' -H 'Content-Type: application/offset+octet-stream' -H 'Tus-Resumable: 1.0.0' -H 'Upload-Offset: 0' -H 'X-Auth: vimock-file-token' --data-binary @testdata/mc_product.dsc`
+- `curl -i -X POST http://localhost:8080/__admin/ext/grpc/reset`
+
 Проверки и результаты:
+- `go test ./...` - успешно.
+- `go test -race ./...` - успешно.
+- `go test ./internal/server -run TestLegacyFileUploadWorkflow` - успешно.
+- `go test ./internal/server -run 'TestLegacyFileUpload|TestUploadMetadata|TestValidateUpload'` - успешно.
+- `go test -coverprofile=coverage.out ./...` - успешно, total coverage 75.9%, `internal/server` coverage 83.8%.
+- Ручная проверка `POST /api/login` - HTTP 200, body `vimock-file-token`.
+- Ручная проверка `POST /api/tus/mc_product.dsc?override=true` - HTTP 201, headers `Location`, `Tus-Resumable`, `Upload-Offset: 0`.
+- Ручная проверка `PATCH /api/tus/mc_product.dsc?override=true` - HTTP 204, `Upload-Offset: 8`.
+- Ручная проверка `POST /__admin/ext/grpc/reset` - HTTP 200, пустое тело.
+- Ручная проверка uploaded file через mapping `bodyFileName=mc_product.dsc` - HTTP 200, bytes `0a 12 76 69 6d 6f 63 6b`.
+- `docker build -t vimock:dev .` - успешно.
+
 Покрытые требования:
+- FILE-002, FILE-003, FILE-004, FILE-005, FILE-006, FILE-007, FILE-008, GRPC-018, ACC-005.
+
 Known gaps:
+- Полноценный TUS protocol не реализован; поддержан только workflow текущих автотестов.
+- Non-zero upload offsets и chunk resume не поддержаны.
+- Persistent/static file storage не реализован; uploaded files живут в памяти процесса.
+- `/__admin/ext/grpc/reset` пока no-op hook, без descriptor registry reload.
+- Native gRPC descriptor Admin API и gRPC stubbing остаются scope последующих шагов.
+- Общий coverage 75.9%; требование 90% остается финальным quality gate.
+
 Риски/решения:
+- Token сделан константным, потому что текущие автотесты используют его только как bearer для `X-Auth`; полноценная auth модель не нужна для локального mock-сервиса.
+- `Upload-Metadata` декодируется как hex, потому что именно так работает текущий `mock_utils.py`; TUS base64 metadata можно добавить позже при реальной необходимости.
+- `PATCH` перезаписывает файл целиком при `Upload-Offset: 0`, чтобы не моделировать resumable upload без требований.
+- Upload пишет в тот же `files.Store`, который использует response renderer, чтобы этот storage дальше можно было переиспользовать для gRPC descriptors.
 ```
 
 ## Шаг 7. Загрузка и проверка всех текущих mappings

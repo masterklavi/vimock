@@ -110,6 +110,10 @@ func (a adminAPI) deleteMapping(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{})
 }
 
+func (a adminAPI) resetGRPC(w http.ResponseWriter, _ *http.Request) {
+	w.WriteHeader(http.StatusOK)
+}
+
 func readMapping(w http.ResponseWriter, r *http.Request, id string) (mapping.Mapping, error) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxMappingBodySize)
 	defer r.Body.Close()
