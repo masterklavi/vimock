@@ -1,0 +1,22 @@
+{
+  "name": "template json rpc id echo",
+  "request": {
+    "method": "POST",
+    "urlPath": "/template"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "jsonBody": {
+      "jsonrpc": "2.0",
+      "id": "{{jsonPath request.body '$.id'}}",
+      "requestId": "{{jsonPath request.body '$.requestId'}}"
+    },
+    "transformers": [
+      "response-template"
+    ]
+  },
+  "priority": 1
+}

@@ -8,6 +8,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"vimock/internal/files"
+	"vimock/internal/mapping"
 )
 
 func TestRuntimeServesBodyForURLMatch(t *testing.T) {
@@ -297,6 +300,70 @@ func TestRuntimeMatchesEqualToJSON(t *testing.T) {
 	}
 	if got := resp.Body.String(); got != "equal" {
 		t.Fatalf("body = %q, want equal", got)
+	}
+}
+
+func TestRuntimeAppliesResponseTemplate(t *testing.T) {
+	handler := newTestHandler()
+	createMapping(t, handler, `{
+	  "request": {
+	    "method": "POST",
+	    "urlPath": "/template"
+	  },
+	  "response": {
+	    "status": 200,
+	    "jsonBody": {
+	      "requestId": "{{jsonPath request.body '$.requestId'}}"
+	    },
+	    "transformers": [
+	      "response-template"
+	    ]
+	  }
+	}`)
+
+	resp := requestWithBody(t, handler, http.MethodPost, "/template", `{"requestId":"req-123"}`)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", resp.Code, http.StatusOK)
+	}
+
+	var body map[string]string
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if body["requestId"] != "req-123" {
+		t.Fatalf("requestId = %q, want req-123", body["requestId"])
+	}
+}
+
+func TestRuntimeServesBodyFileBytes(t *testing.T) {
+	fileStore := files.NewMemoryStore()
+	want := []byte{0x00, 0x01, 0xff, 0x50, 0x44, 0x46}
+	fileStore.Put("payload.bin", want)
+
+	handler := NewHandlerWithStores(nil, mapping.NewStore(), fileStore)
+	createMapping(t, handler, `{
+	  "request": {
+	    "method": "GET",
+	    "urlPath": "/file"
+	  },
+	  "response": {
+	    "status": 200,
+	    "headers": {
+	      "Content-Type": "application/octet-stream"
+	    },
+	    "bodyFileName": "payload.bin"
+	  }
+	}`)
+
+	resp := requestWithBody(t, handler, http.MethodGet, "/file", "")
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", resp.Code, http.StatusOK)
+	}
+	if got := resp.Header().Get("Content-Type"); got != "application/octet-stream" {
+		t.Fatalf("content-type = %q, want application/octet-stream", got)
+	}
+	if !bytes.Equal(resp.Body.Bytes(), want) {
+		t.Fatalf("body bytes = %v, want %v", resp.Body.Bytes(), want)
 	}
 }
 

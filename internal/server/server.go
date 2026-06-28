@@ -6,7 +6,9 @@ import (
 	"net/http"
 	"time"
 
+	"vimock/internal/files"
 	"vimock/internal/mapping"
+	"vimock/internal/response"
 )
 
 type statusResponse struct {
@@ -16,19 +18,29 @@ type statusResponse struct {
 }
 
 func NewHandler(logger *slog.Logger) http.Handler {
-	return NewHandlerWithStore(logger, mapping.NewStore())
+	return NewHandlerWithStores(logger, mapping.NewStore(), files.NewMemoryStore())
 }
 
 func NewHandlerWithStore(logger *slog.Logger, mappings *mapping.Store) http.Handler {
+	return NewHandlerWithStores(logger, mappings, files.NewMemoryStore())
+}
+
+func NewHandlerWithStores(logger *slog.Logger, mappings *mapping.Store, fileStore files.Store) http.Handler {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	if mappings == nil {
 		mappings = mapping.NewStore()
 	}
+	if fileStore == nil {
+		fileStore = files.NewMemoryStore()
+	}
 
 	admin := adminAPI{mappings: mappings}
-	runtime := runtimeAPI{mappings: mappings}
+	runtime := runtimeAPI{
+		mappings: mappings,
+		renderer: response.NewRenderer(fileStore),
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /__admin/health", healthHandler)
 	mux.HandleFunc("GET /__admin/ready", readyHandler)

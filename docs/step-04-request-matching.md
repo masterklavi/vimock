@@ -114,6 +114,4 @@ go test ./internal/matcher -run TestJSONPathCurrentMockPatterns
 
 - Full JSONPath compatibility beyond the patterns used by current mocks is not implemented.
 - Full JSONUnit compatibility for `equalToJson` is not implemented.
-- JSONPath template helper for responses is not implemented yet.
-- Response templating is not implemented yet.
-- Body files are not implemented yet.
+- Response templating and body files are covered by Step 5.

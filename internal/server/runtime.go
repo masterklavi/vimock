@@ -8,12 +8,14 @@ import (
 
 	"vimock/internal/mapping"
 	"vimock/internal/matcher"
+	"vimock/internal/response"
 )
 
 const noMappingsMessage = "No response could be served as there are no stub mappings in this WireMock instance."
 
 type runtimeAPI struct {
 	mappings *mapping.Store
+	renderer response.Renderer
 }
 
 func (a runtimeAPI) serveHTTP(w http.ResponseWriter, r *http.Request) {
@@ -35,7 +37,13 @@ func (a runtimeAPI) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeStubResponse(w, stub.Response())
+	rendered, err := a.renderer.Render(stub.Response(), bodyContext)
+	if err != nil {
+		writeResponseRenderError(w, err)
+		return
+	}
+
+	writeStubResponse(w, rendered)
 }
 
 func (a runtimeAPI) findMatch(r *http.Request, body *matcher.BodyContext) (mapping.Mapping, bool) {
@@ -83,7 +91,11 @@ func (a runtimeAPI) writeNoMatch(w http.ResponseWriter, _ *http.Request) {
 	_, _ = fmt.Fprint(w, "No response could be served as the request was not matched by any stub mapping.")
 }
 
-func writeStubResponse(w http.ResponseWriter, response mapping.ResponseDefinition) {
+func writeResponseRenderError(w http.ResponseWriter, err error) {
+	http.Error(w, err.Error(), http.StatusInternalServerError)
+}
+
+func writeStubResponse(w http.ResponseWriter, response response.Rendered) {
 	for name, values := range response.Headers {
 		for _, value := range values {
 			w.Header().Add(name, value)

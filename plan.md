@@ -408,14 +408,68 @@ go test ./internal/response -run TestTemplateAndBodyFiles
 Отчет ИИ по шагу 5:
 
 ```text
-Статус: TODO
+Статус: DONE
+
 Сделано:
+- Добавлен response rendering pipeline отдельно от HTTP runtime.
+- Добавлен in-memory file storage abstraction для будущих body files и upload API.
+- Поддержан parsing `response.bodyFileName` и `response.transformers`.
+- Реализован lookup `bodyFileName` через file store.
+- Binary body files отдаются как bytes без text/json перекодирования.
+- Реализован targeted `response-template` для helper `{{jsonPath request.body '...'}}`.
+- Реализован JSON-RPC-style echo `id`/`requestId` из request body в `jsonBody`.
+- Добавлено JSON string escaping для значений helper внутри `jsonBody`.
+- Runtime теперь читает request body один раз, переиспользует его для matching и rendering.
+- Добавлен пример `testdata/template_mapping.json`.
+- Обновлены README и docs по шагу 5.
+
 Измененные файлы:
+- `internal/files/store.go`
+- `internal/files/store_test.go`
+- `internal/response/render.go`
+- `internal/response/render_test.go`
+- `internal/mapping/model.go`
+- `internal/server/server.go`
+- `internal/server/runtime.go`
+- `internal/server/runtime_test.go`
+- `testdata/template_mapping.json`
+- `.gitignore`
+- `README.md`
+- `docs/README.md`
+- `docs/step-04-request-matching.md`
+- `docs/step-05-response-templating-and-body-files.md`
+- `plan.md`
+
 Как запускать:
+- `go run ./cmd/vimock`
+- `curl -X POST http://localhost:8080/__admin/mappings -H 'Content-Type: application/json' --data-binary @testdata/template_mapping.json`
+- `curl -i -X POST http://localhost:8080/template -H 'Content-Type: application/json' --data '{"id":"rpc-42","requestId":"req-42"}'`
+
 Проверки и результаты:
+- `go test ./...` - успешно.
+- `go test -race ./...` - успешно.
+- `go test ./internal/response -run TestTemplateAndBodyFiles` - успешно.
+- `go test -coverprofile=coverage.out ./...` - успешно, total coverage 75.0%.
+- Ручная проверка `POST /__admin/mappings` на `testdata/template_mapping.json` - HTTP 201.
+- Ручная проверка `POST /template` с body `{"id":"rpc-42","requestId":"req-42"}` - HTTP 200, JSON response содержит `id=rpc-42` и `requestId=req-42`.
+- `docker build -t vimock:dev .` - успешно.
+
 Покрытые требования:
+- RESP-005, RESP-006, RESP-007, RESP-008, RESP-009, RESP-011, JRPC-002, JRPC-003, FILE-001, FILE-009, FILE-010.
+
 Known gaps:
+- HTTP upload API файлов не реализован, это scope шага 6.
+- Полная WireMock/Handlebars совместимость `response-template` не реализована; поддержан только helper `jsonPath request.body`.
+- Persistent/static file loading не реализован; текущий file store in-memory.
+- Template helper для JSON body рассчитан на вставку значений внутрь JSON string fields; более широкие raw JSON insertion cases потребуют отдельной совместимости.
+- gRPC conversion не реализован, это последующие шаги.
+- Общий coverage 75.0%; требование 90% остается финальным quality gate.
+
 Риски/решения:
+- Renderer вынесен в отдельный пакет, чтобы дальше добавить delay/proxy/recording без разрастания runtime handler.
+- File store сразу copy-safe и mutex-protected, так как приложение будет обслуживать параллельные запросы.
+- Body file не проходит через template pipeline, чтобы не портить binary payload.
+- Request body читается один раз и передается в matcher/rendering через shared `BodyContext`, чтобы не делать повторный JSON parse на каждый candidate mapping.
 ```
 
 ## Шаг 6. Legacy File API для автотестов

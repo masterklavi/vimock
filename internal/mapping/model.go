@@ -39,10 +39,12 @@ type RequestPattern struct {
 }
 
 type ResponseDefinition struct {
-	Status  int
-	Headers map[string][]string
-	Body    []byte
-	JSON    bool
+	Status       int
+	Headers      map[string][]string
+	Body         []byte
+	JSON         bool
+	BodyFile     string
+	Transformers []string
 }
 
 func ParseJSON(data []byte) (Mapping, error) {
@@ -148,10 +150,12 @@ func (m Mapping) Request() RequestPattern {
 
 func (m Mapping) Response() ResponseDefinition {
 	return ResponseDefinition{
-		Status:  m.response.Status,
-		Headers: cloneHeaders(m.response.Headers),
-		Body:    cloneBytes(m.response.Body),
-		JSON:    m.response.JSON,
+		Status:       m.response.Status,
+		Headers:      cloneHeaders(m.response.Headers),
+		Body:         cloneBytes(m.response.Body),
+		JSON:         m.response.JSON,
+		BodyFile:     m.response.BodyFile,
+		Transformers: append([]string(nil), m.response.Transformers...),
 	}
 }
 
@@ -396,12 +400,22 @@ func parseResponse(raw json.RawMessage) (ResponseDefinition, error) {
 	if err != nil {
 		return ResponseDefinition{}, err
 	}
+	bodyFile, err := stringField(object, "bodyFileName")
+	if err != nil {
+		return ResponseDefinition{}, err
+	}
+	transformers, err := parseStringArrayField(object, "transformers")
+	if err != nil {
+		return ResponseDefinition{}, err
+	}
 
 	return ResponseDefinition{
-		Status:  status,
-		Headers: headers,
-		Body:    body,
-		JSON:    isJSON,
+		Status:       status,
+		Headers:      headers,
+		Body:         body,
+		JSON:         isJSON,
+		BodyFile:     bodyFile,
+		Transformers: transformers,
 	}, nil
 }
 
@@ -451,6 +465,19 @@ func parseResponseBody(object map[string]json.RawMessage) ([]byte, bool, error) 
 		return nil, false, fmt.Errorf("response.body must be a string")
 	}
 	return []byte(body), false, nil
+}
+
+func parseStringArrayField(raw map[string]json.RawMessage, field string) ([]string, error) {
+	value, ok := raw[field]
+	if !ok || len(value) == 0 || bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+		return nil, nil
+	}
+
+	var parsed []string
+	if err := json.Unmarshal(value, &parsed); err != nil {
+		return nil, fmt.Errorf("%s must be a string array", field)
+	}
+	return parsed, nil
 }
 
 func cloneRawMap(source map[string]json.RawMessage) map[string]json.RawMessage {
