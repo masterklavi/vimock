@@ -145,14 +145,59 @@ curl http://localhost:8080/__admin/mappings
 Отчет ИИ по шагу 2:
 
 ```text
-Статус: TODO
+Статус: DONE
 Сделано:
+- Добавлена internal model WireMock mapping с top-level полями `id`, `name`, `persistent` и сохранением исходных/unknown JSON fields.
+- Добавлена генерация UUID для `POST /__admin/mappings`, если `id` не передан.
+- Добавлена UUID validation для Admin API path id и top-level mapping id.
+- Добавлен in-memory mapping store с copy-on-write snapshot через `atomic.Value`; чтение `GET/List` идет без write-lock, изменения защищены mutex.
+- Реализован `GET /__admin/mappings` с WireMock-like ответом `{ "mappings": [...], "meta": { "total": N } }`.
+- Реализован `GET /__admin/mappings/{id}` как дополнительный WireMock-compatible endpoint для чтения одного mapping-а.
+- Реализован `POST /__admin/mappings` с HTTP 201 и возвратом полного mapping-а с `id`.
+- Реализован `PUT /__admin/mappings/{id}` с HTTP 200, проверкой существования и принудительным использованием path `id`, как в WireMock.
+- Реализован `DELETE /__admin/mappings/{id}` с HTTP 200 и телом `{}`; для отсутствующего id возвращается HTTP 404.
+- Добавлены JSON validation errors с HTTP 400 и телом `{ "errors": [{ "title": "..." }] }`.
+- Добавлены unit tests на model parsing, preservation unknown fields, store CRUD, concurrent access и HTTP Admin API CRUD.
+
 Измененные файлы:
+- `internal/mapping/model.go`
+- `internal/mapping/store.go`
+- `internal/mapping/model_test.go`
+- `internal/mapping/store_test.go`
+- `internal/server/admin.go`
+- `internal/server/admin_test.go`
+- `internal/server/server.go`
+- `plan.md`
+
 Как запускать:
+- `go run ./cmd/vimock`
+- `curl -X POST http://localhost:8080/__admin/mappings -H 'Content-Type: application/json' --data-binary @examples/druz/Fry/fry_proxy.json`
+- `curl http://localhost:8080/__admin/mappings`
+- `curl -X PUT http://localhost:8080/__admin/mappings/{id} -H 'Content-Type: application/json' --data-binary @mapping.json`
+- `curl -X DELETE http://localhost:8080/__admin/mappings/{id}`
+
 Проверки и результаты:
+- `GOCACHE=/Users/vseiinstrumentyru/GolandProjects/vimock/.gocache go test ./...` - успешно.
+- `GOCACHE=/Users/vseiinstrumentyru/GolandProjects/vimock/.gocache go test -race ./...` - успешно.
+- `GOCACHE=/Users/vseiinstrumentyru/GolandProjects/vimock/.gocache go test -coverprofile=coverage.out ./...` - успешно.
+- `GOCACHE=/Users/vseiinstrumentyru/GolandProjects/vimock/.gocache go tool cover -func=coverage.out` - total coverage 78.7%.
+- Ручная проверка `POST /__admin/mappings` на `examples/druz/Fry/fry_proxy.json` - HTTP 201, сгенерирован UUID, возвращены `name`, `persistent`, `metadata.wiremock-gui.folder`, `request`, `response`.
+- Ручная проверка `GET /__admin/mappings` после POST - HTTP 200, `mappings[0]` содержит загруженный Fry Proxy, `meta.total=1`.
+- `docker build -t vimock:dev .` - успешно.
+
 Покрытые требования:
+- CON-001, CON-007, CON-008, MAP-001, MAP-002, MAP-003, MAP-004, ADM-001, ADM-002, ADM-003, ADM-004, ADM-005, ADM-006, ADM-007, ADM-008, ADM-009, ADM-010, ADM-011, ADM-012, ADM-013, ADM-014, ADM-015, NFR-001, NFR-003, NFR-004, TEST-002.
+
 Known gaps:
+- Matching пользовательских HTTP/gRPC/GraphQL запросов не реализован, это scope следующих шагов.
+- Физическая persistence mappings на диск не реализована и не требуется для MVP.
+- WireMock endpoints `GET /__admin/mappings?limit&offset`, `/__admin/mappings/reset`, `/__admin/mappings/import` пока не реализованы, так как не входят в шаг 2.
+- Общий coverage пока 78.7%; требование 90% остается финальным quality gate.
+
 Риски/решения:
+- Store публикует immutable snapshots и переиспользует raw JSON payloads как неизменяемые значения, чтобы не копировать большие mappings на каждом read.
+- `PUT /__admin/mappings/{id}` сначала проверяет существование id, затем парсит body; это повторяет WireMock-поведение, где PUT отсутствующего id возвращает 404 даже при пустом body.
+- В sandbox bind/listen, curl к локальному порту и Docker daemon требуют elevated execution; в обычном локальном окружении эти команды должны выполняться без дополнительных прав.
 ```
 
 ## Шаг 3. Базовый HTTP stubbing

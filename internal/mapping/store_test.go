@@ -1,0 +1,101 @@
+package mapping
+
+import (
+	"fmt"
+	"sync"
+	"testing"
+)
+
+func TestStoreCRUD(t *testing.T) {
+	store := NewStore()
+	first := store.Create(mustParseMapping(t, "first"))
+	second := store.Create(mustParseMapping(t, "second"))
+
+	if store.Count() != 2 {
+		t.Fatalf("count = %d, want 2", store.Count())
+	}
+
+	mappings := store.List()
+	if len(mappings) != 2 {
+		t.Fatalf("list len = %d, want 2", len(mappings))
+	}
+	if mappings[0].ID() != first.ID() || mappings[1].ID() != second.ID() {
+		t.Fatalf("list order = [%s, %s], want insertion order [%s, %s]", mappings[0].ID(), mappings[1].ID(), first.ID(), second.ID())
+	}
+
+	updated, ok := store.Replace(first.ID(), mustParseMapping(t, "updated"))
+	if !ok {
+		t.Fatalf("Replace() ok = false, want true")
+	}
+	if updated.ID() != first.ID() {
+		t.Fatalf("updated id = %q, want %q", updated.ID(), first.ID())
+	}
+	if updated.Sequence() != first.Sequence() {
+		t.Fatalf("updated sequence = %d, want %d", updated.Sequence(), first.Sequence())
+	}
+
+	got, ok := store.Get(first.ID())
+	if !ok {
+		t.Fatalf("Get() ok = false, want true")
+	}
+	if got.Name() != "updated" {
+		t.Fatalf("name = %q, want updated", got.Name())
+	}
+
+	if !store.Delete(first.ID()) {
+		t.Fatalf("Delete() ok = false, want true")
+	}
+	if _, ok := store.Get(first.ID()); ok {
+		t.Fatalf("Get() after delete ok = true, want false")
+	}
+	if store.Delete(first.ID()) {
+		t.Fatalf("second Delete() ok = true, want false")
+	}
+}
+
+func TestStoreConcurrentAccess(t *testing.T) {
+	store := NewStore()
+
+	var wg sync.WaitGroup
+	errCh := make(chan error, 200)
+	for i := 0; i < 100; i++ {
+		i := i
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			created := store.Create(mustParseMapping(t, fmt.Sprintf("mapping-%d", i)))
+			if _, ok := store.Get(created.ID()); !ok {
+				errCh <- fmt.Errorf("created mapping %s not found", created.ID())
+				return
+			}
+
+			_ = store.List()
+			if i%2 == 0 {
+				store.Delete(created.ID())
+			}
+			_ = store.List()
+		}()
+	}
+
+	wg.Wait()
+	close(errCh)
+
+	for err := range errCh {
+		t.Error(err)
+	}
+}
+
+func mustParseMapping(t *testing.T, name string) Mapping {
+	t.Helper()
+
+	stub, err := ParseJSON([]byte(fmt.Sprintf(`{
+	  "name": %q,
+	  "request": {"method": "GET", "url": "/%s"},
+	  "response": {"status": 200}
+	}`, name, name)))
+	if err != nil {
+		t.Fatalf("ParseJSON(): %v", err)
+	}
+	return stub
+}

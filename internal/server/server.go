@@ -5,6 +5,8 @@ import (
 	"log/slog"
 	"net/http"
 	"time"
+
+	"vimock/internal/mapping"
 )
 
 type statusResponse struct {
@@ -14,13 +16,26 @@ type statusResponse struct {
 }
 
 func NewHandler(logger *slog.Logger) http.Handler {
+	return NewHandlerWithStore(logger, mapping.NewStore())
+}
+
+func NewHandlerWithStore(logger *slog.Logger, mappings *mapping.Store) http.Handler {
 	if logger == nil {
 		logger = slog.Default()
 	}
+	if mappings == nil {
+		mappings = mapping.NewStore()
+	}
 
+	admin := adminAPI{mappings: mappings}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /__admin/health", healthHandler)
 	mux.HandleFunc("GET /__admin/ready", readyHandler)
+	mux.HandleFunc("GET /__admin/mappings", admin.listMappings)
+	mux.HandleFunc("POST /__admin/mappings", admin.createMapping)
+	mux.HandleFunc("GET /__admin/mappings/{id}", admin.getMapping)
+	mux.HandleFunc("PUT /__admin/mappings/{id}", admin.updateMapping)
+	mux.HandleFunc("DELETE /__admin/mappings/{id}", admin.deleteMapping)
 
 	return loggingMiddleware(logger, mux)
 }
