@@ -1,0 +1,40 @@
+{
+  "name": "GraphQL hero semantic matcher",
+  "persistent": true,
+  "request": {
+    "method": "POST",
+    "urlPath": "/graphql",
+    "customMatcher": {
+      "name": "graphql-body-matcher",
+      "parameters": {
+        "query": "query GetHero($episode: Episode) { hero(episode: $episode) { name age friends { name } } }",
+        "variables": {
+          "episode": "JEDI"
+        },
+        "operationName": "GetHero"
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "jsonBody": {
+      "data": {
+        "hero": {
+          "name": "Luke Skywalker",
+          "age": 19,
+          "friends": [
+            {
+              "name": "Leia Organa"
+            }
+          ]
+        }
+      }
+    }
+  },
+  "priority": 1,
+  "metadata": {
+    "wiremock-gui": {
+      "folder": "/GraphQL"
+    }
+  }
+}

@@ -34,15 +34,18 @@ type Scenario struct {
 }
 
 type RequestPattern struct {
-	Method     string
-	URL        string
-	URLPath    string
-	URLPattern string
+	Method         string
+	URL            string
+	URLPath        string
+	URLPattern     string
+	URLPathPattern string
 
 	BodyPatterns    []matcher.BodyPattern
 	QueryParameters map[string]matcher.EqualTo
 	Headers         map[string]matcher.EqualTo
+	CustomMatcher   *matcher.CustomMatcher
 	urlRegex        *regexp.Regexp
+	pathRegex       *regexp.Regexp
 }
 
 type ResponseDefinition struct {
@@ -362,6 +365,10 @@ func parseRequest(raw json.RawMessage) (RequestPattern, error) {
 	if err != nil {
 		return RequestPattern{}, err
 	}
+	urlPathPattern, err := stringField(object, "urlPathPattern")
+	if err != nil {
+		return RequestPattern{}, err
+	}
 	bodyPatterns, err := parseBodyPatterns(object["bodyPatterns"])
 	if err != nil {
 		return RequestPattern{}, err
@@ -374,6 +381,10 @@ func parseRequest(raw json.RawMessage) (RequestPattern, error) {
 	if err != nil {
 		return RequestPattern{}, err
 	}
+	customMatcher, err := matcher.ParseCustomMatcher(object["customMatcher"])
+	if err != nil {
+		return RequestPattern{}, err
+	}
 
 	var urlRegex *regexp.Regexp
 	if urlPattern != "" {
@@ -382,18 +393,28 @@ func parseRequest(raw json.RawMessage) (RequestPattern, error) {
 			return RequestPattern{}, fmt.Errorf("request.urlPattern must be a valid regexp: %w", err)
 		}
 	}
+	var pathRegex *regexp.Regexp
+	if urlPathPattern != "" {
+		pathRegex, err = regexp.Compile(urlPathPattern)
+		if err != nil {
+			return RequestPattern{}, fmt.Errorf("request.urlPathPattern must be a valid regexp: %w", err)
+		}
+	}
 
 	return RequestPattern{
-		Method:     strings.ToUpper(method),
-		URL:        url,
-		URLPath:    urlPath,
-		URLPattern: urlPattern,
+		Method:         strings.ToUpper(method),
+		URL:            url,
+		URLPath:        urlPath,
+		URLPattern:     urlPattern,
+		URLPathPattern: urlPathPattern,
 		BodyPatterns: append([]matcher.BodyPattern(nil),
 			bodyPatterns...,
 		),
 		QueryParameters: queryParameters,
 		Headers:         headers,
+		CustomMatcher:   customMatcher,
 		urlRegex:        urlRegex,
+		pathRegex:       pathRegex,
 	}, nil
 }
 
@@ -434,6 +455,9 @@ func (p RequestPattern) Matches(method, requestURI, path string, query map[strin
 	if !matcher.MatchBodyPatternsWithContext(p.BodyPatterns, body) {
 		return false
 	}
+	if p.CustomMatcher != nil && !p.CustomMatcher.Matches(body) {
+		return false
+	}
 	return true
 }
 
@@ -446,6 +470,9 @@ func (p RequestPattern) matchesURL(requestURI, path string) bool {
 	case p.urlRegex != nil:
 		match := p.urlRegex.FindStringIndex(requestURI)
 		return len(match) == 2 && match[0] == 0 && match[1] == len(requestURI)
+	case p.pathRegex != nil:
+		match := p.pathRegex.FindStringIndex(path)
+		return len(match) == 2 && match[0] == 0 && match[1] == len(path)
 	default:
 		return false
 	}

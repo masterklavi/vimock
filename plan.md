@@ -1143,14 +1143,64 @@ go test ./... -run 'TestGraphQL'
 Отчет ИИ по шагу 13:
 
 ```text
-Статус: TODO
+Статус: DONE
 Сделано:
+- Добавлен WireMock-compatible GraphQL custom matcher `request.customMatcher.name = "graphql-body-matcher"`.
+- Поддержан JSON/Admin API формат `customMatcher.parameters.query`, `variables`, `operationName`.
+- Incoming GraphQL request body парсится как JSON object с `query`, опциональными `variables` и `operationName`.
+- Query matching реализован через schema-less GraphQL parser + canonical structural representation.
+- Whitespace и порядок selections/arguments/directives/fragments не влияют на match.
+- Aliases, arguments, fragments, inline fragments, directives, variable definitions, lists и input objects учитываются структурно.
+- Variables сравниваются как строгий JSON: порядок object keys не важен, порядок array elements важен.
+- Если expected `variables` или `operationName` отсутствуют, request с этими полями не матчится.
+- Invalid JSON или invalid GraphQL query дают no match, процесс не падает.
+- Добавлена поддержка `request.urlPathPattern` для совместимости с WireMock GraphQL extension mappings.
+- Response идет через общий HTTP response pipeline.
+- Добавлен пример `testdata/graphql_mapping.json`.
+- Добавлены unit tests для GraphQL matcher и runtime tests через обычный HTTP handler.
+- README и docs обновлены по шагу 13.
+
 Измененные файлы:
+- `internal/matcher/graphql.go`
+- `internal/matcher/graphql_test.go`
+- `internal/mapping/model.go`
+- `internal/server/graphql_runtime_test.go`
+- `testdata/graphql_mapping.json`
+- `README.md`
+- `docs/README.md`
+- `docs/step-13-graphql-semantic-matcher.md`
+- `plan.md`
+
 Как запускать:
+- `curl -i -X POST http://localhost:8080/__admin/mappings -H 'Content-Type: application/json' --data-binary @testdata/graphql_mapping.json`
+- `curl -i -X POST http://localhost:8080/graphql -H 'Content-Type: application/json' -d '{"operationName":"GetHero","variables":{"episode":"JEDI"},"query":"query GetHero($episode: Episode) { hero(episode: $episode) { friends { name } age name } }"}'`
+- `curl -i -X POST http://localhost:8080/graphql -H 'Content-Type: application/json' -d '{"operationName":"GetHero","variables":{"episode":"EMPIRE"},"query":"query GetHero($episode: Episode) { hero(episode: $episode) { friends { name } age name } }"}'`
+
 Проверки и результаты:
+- `GOCACHE=/Users/vseiinstrumentyru/GolandProjects/vimock/.gocache go test ./...` - passed.
+- `GOCACHE=/Users/vseiinstrumentyru/GolandProjects/vimock/.gocache go test -race ./internal/matcher ./internal/mapping ./internal/server` - passed.
+- `GOCACHE=/Users/vseiinstrumentyru/GolandProjects/vimock/.gocache go test -coverprofile=coverage.out ./...` - passed, total coverage 70.8%.
+
 Покрытые требования:
+- PROTO-005: GraphQL protocol matcher foundation добавлен.
+- GQL-001, GQL-002, GQL-003: semantic query matcher, whitespace/order normalization реализованы.
+- GQL-004, GQL-005, GQL-006: aliases, arguments и fragments учитываются.
+- GQL-007, GQL-008: variables и operationName matching реализованы.
+- GQL-009: compatible JSON/Admin API `graphql-body-matcher` поддержан.
+- GQL-010: invalid input дает no match без падения процесса.
+- GQL-011: response идет через общий response pipeline.
+- ACC-008: representative GraphQL fixture и runtime flow покрыты тестом.
+
 Known gaps:
+- Matcher schema-less: GraphQL schema validation не выполняется.
+- Federation-specific behavior не реализован.
+- Parser покрывает синтаксис текущих compatibility fixtures, но не заявляет полную parity с `graphql-java` для всех редких GraphQL syntax edge cases.
+- Диагностика invalid GraphQL пока не отдается как WireMock sub-events, только приводит к no match.
+
 Риски/решения:
+- Внешнюю GraphQL dependency не добавлял, чтобы не утяжелять бинарник и сборку; реализован небольшой parser под нужный compatibility scope.
+- `urlPathPattern` добавлен как path-only regexp matcher, чтобы extension mappings с `/graphql` работали без переписывания.
+- Новый parser увеличил объем кода и снизил общий coverage до 70.8%; 90% остается финальным quality gate.
 ```
 
 ## Шаг 14. Recording и snapshotting

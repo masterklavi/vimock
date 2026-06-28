@@ -97,6 +97,9 @@ Tag pushes create GitHub Release assets for Linux and macOS on `amd64` and `arm6
 - gRPC request protobuf is adapted to protobuf JSON and matched by existing WireMock request matchers.
 - gRPC JSON response bodies are encoded back to protobuf responses.
 - gRPC status mapping via `grpc-status-name`, `grpc-status-reason`, and selected HTTP statuses.
+- GraphQL semantic body matcher via `request.customMatcher.name = graphql-body-matcher`.
+- GraphQL query matching ignores whitespace and field order while preserving aliases, arguments, fragments, variables and operation name semantics.
+- URL path regex matcher: `request.urlPathPattern`.
 - WireMock-like 404 response for unmatched requests.
 
 ## TODO
@@ -111,7 +114,7 @@ Tag pushes create GitHub Release assets for Linux and macOS on `amd64` and `arm6
 - gRPC proxying and recording.
 - gRPC reflection over loaded descriptors.
 - `.proto` source compilation for the gRPC descriptor registry.
-- GraphQL matcher support.
+- GraphQL federation-specific matching.
 - Black-box API autotests.
 - Final 90% unit test coverage gate.
 
@@ -129,12 +132,13 @@ Tag pushes create GitHub Release assets for Linux and macOS on `amd64` and `arm6
 - [Step 10: Runtime-generated workflow](docs/step-10-runtime-generated-workflow.md)
 - [Step 11: gRPC descriptor registry](docs/step-11-grpc-descriptor-registry.md)
 - [Step 12: gRPC stubbing runtime](docs/step-12-grpc-stubbing-runtime.md)
+- [Step 13: GraphQL semantic matcher](docs/step-13-graphql-semantic-matcher.md)
 
 ## Scope guardrails
 
-The current implementation is incremental. It includes the service bootstrap, port configuration, stdout logging, health/readiness endpoints, Admin API CRUD for mappings, basic HTTP stubbing, request matching needed by current mocks, targeted response templating, in-memory body files, proxy fallback, delays, stateful scenarios, runtime-generated mapping lifecycle checks, the legacy file upload workflow used by current autotests, the gRPC descriptor registry foundation, and unary gRPC stubbing runtime.
+The current implementation is incremental. It includes the service bootstrap, port configuration, stdout logging, health/readiness endpoints, Admin API CRUD for mappings, basic HTTP stubbing, request matching needed by current mocks, targeted response templating, in-memory body files, proxy fallback, delays, stateful scenarios, runtime-generated mapping lifecycle checks, the legacy file upload workflow used by current autotests, the gRPC descriptor registry foundation, unary gRPC stubbing runtime, and GraphQL semantic matching.
 
-Advanced request matching beyond current fixtures, full WireMock response templating, full TUS support, recording, advanced gRPC features, and GraphQL are intentionally added in separate increments described in `plan.md`.
+Advanced request matching beyond current fixtures, full WireMock response templating, full TUS support, recording, advanced gRPC features, and GraphQL federation-specific behavior are intentionally added in separate increments described in `plan.md`.
 
 ## License
 

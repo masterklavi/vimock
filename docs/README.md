@@ -15,3 +15,4 @@ This folder contains simple step-by-step documentation for implemented increment
 - [Step 10: Runtime-generated workflow](step-10-runtime-generated-workflow.md)
 - [Step 11: gRPC descriptor registry](step-11-grpc-descriptor-registry.md)
 - [Step 12: gRPC stubbing runtime](step-12-grpc-stubbing-runtime.md)
+- [Step 13: GraphQL semantic matcher](step-13-graphql-semantic-matcher.md)
