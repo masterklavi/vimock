@@ -15,13 +15,13 @@
 | 1 | `vimock` запускается как пустой сервис | Go module, CLI, HTTP server, health/readiness, stdout logs, Docker skeleton, coverage gate | `go run ./cmd/vimock`, `curl /__admin/health`, `docker build` |
 | 2 | `vimock` принимает mappings через Admin API | Mapping model, in-memory storage, CRUD `/__admin/mappings`, stable IDs, unknown fields | `POST/GET/PUT/DELETE /__admin/mappings` |
 | 3 | `vimock` отвечает на простые HTTP stubs | Method/URL matching, priority, deterministic selection, status/headers/body/jsonBody | Добавить mapping и дернуть stub URL |
-| 4 | `vimock` матчится по текущим request matchers | JSONPath, absent, query/header equalTo, equalToJson foundation | Fixture tests на representative mappings |
+| 4 | `vimock` матчится по текущим request matchers | JSONPath, absent, query/header equalTo, equalToJson foundation | Stable matcher tests |
 | 5 | `vimock` умеет response pipeline текущих моков | response-template, jsonPath helper, bodyFileName, binary body, JSON-RPC id | Моки с `{{jsonPath}}`, PDF/bin bodyFileName |
-| 6 | `vimock` совместим с bootstrap автотестов по файлам | Legacy file API `/api/login`, `/api/tus`, `.dsc`, grpc reset no-op/reload hook | Запросы из `mock_utils.py` проходят |
-| 7 | `vimock` загружает все текущие static mappings | Fixture loader и тесты на `examples` + `autotests-example/mocks` | Все JSON mappings парсятся и грузятся |
+| 6 | `vimock` совместим с bootstrap автотестов по файлам | Legacy file API `/api/login`, `/api/tus`, `.dsc`, grpc reset no-op/reload hook | Legacy upload workflow проходит |
+| 7 | `vimock` прошел одноразовую проверку временного набора mappings | Проверка совместимости без постоянной зависимости от временных fixture-папок | Результат зафиксирован в отчете шага |
 | 8 | `vimock` умеет proxy fallback и delays | `proxyBaseUrl`, `proxyUrlPrefixToRemove`, fixed/random/chunked delays | Stub fallback через proxy, delay tests |
 | 9 | `vimock` поддерживает scenarios | Scenario state engine, Started, transitions, concurrent safety | Stateful mapping меняет response |
-| 10 | `vimock` проходит runtime-generated workflow автотестов | Runtime create/use/delete, name+folder update flow, PDM reset behavior | Workflow из `generator_utils.py` |
+| 10 | `vimock` проходит runtime-generated workflow автотестов | Runtime create/use/delete, name+folder update flow, PDM reset behavior | Runtime-generated workflow проходит |
 | 11 | `vimock` имеет gRPC descriptor registry | Admin API descriptor upload/list/delete/reset, legacy bridge, HTTP/2/gRPC listener base | Upload `.dsc`, list, reset |
 | 12 | `vimock` исполняет gRPC stubs | Protobuf JSON conversion, gRPC URL mapping, status headers, templating | gRPC client вызывает sample service |
 | 13 | `vimock` исполняет GraphQL stubs | GraphQL semantic matcher, variables JSON matching, custom matcher JSON format | GraphQL query with reordered fields |
@@ -138,7 +138,7 @@ Known gaps:
 ```bash
 go test ./...
 go run ./cmd/vimock
-curl -X POST http://localhost:8080/__admin/mappings -d @examples/druz/Fry/fry_proxy.json -H 'Content-Type: application/json'
+curl -X POST http://localhost:8080/__admin/mappings -d @testdata/simple_body_mapping.json -H 'Content-Type: application/json'
 curl http://localhost:8080/__admin/mappings
 ```
 
@@ -171,7 +171,7 @@ curl http://localhost:8080/__admin/mappings
 
 Как запускать:
 - `go run ./cmd/vimock`
-- `curl -X POST http://localhost:8080/__admin/mappings -H 'Content-Type: application/json' --data-binary @examples/druz/Fry/fry_proxy.json`
+- `curl -X POST http://localhost:8080/__admin/mappings -H 'Content-Type: application/json' --data-binary @testdata/simple_body_mapping.json`
 - `curl http://localhost:8080/__admin/mappings`
 - `curl -X PUT http://localhost:8080/__admin/mappings/{id} -H 'Content-Type: application/json' --data-binary @mapping.json`
 - `curl -X DELETE http://localhost:8080/__admin/mappings/{id}`
@@ -181,8 +181,8 @@ curl http://localhost:8080/__admin/mappings
 - `GOCACHE=/Users/vseiinstrumentyru/GolandProjects/vimock/.gocache go test -race ./...` - успешно.
 - `GOCACHE=/Users/vseiinstrumentyru/GolandProjects/vimock/.gocache go test -coverprofile=coverage.out ./...` - успешно.
 - `GOCACHE=/Users/vseiinstrumentyru/GolandProjects/vimock/.gocache go tool cover -func=coverage.out` - total coverage 78.7%.
-- Ручная проверка `POST /__admin/mappings` на `examples/druz/Fry/fry_proxy.json` - HTTP 201, сгенерирован UUID, возвращены `name`, `persistent`, `metadata.wiremock-gui.folder`, `request`, `response`.
-- Ручная проверка `GET /__admin/mappings` после POST - HTTP 200, `mappings[0]` содержит загруженный Fry Proxy, `meta.total=1`.
+- Ручная проверка `POST /__admin/mappings` на `testdata/simple_body_mapping.json` - HTTP 201, сгенерирован UUID, возвращены `name`, `request`, `response`.
+- Ручная проверка `GET /__admin/mappings` после POST - HTTP 200, `mappings[0]` содержит загруженный mapping, `meta.total=1`.
 - `docker build -t vimock:dev .` - успешно.
 
 Покрытые требования:
@@ -279,7 +279,7 @@ Known gaps:
 - Общий coverage пока 71.3%; требование 90% остается финальным quality gate.
 
 Риски/решения:
-- WireMock использует Java regex, VIMock сейчас использует Go RE2. Текущие `urlPattern` из `examples` и `autotests-example/mocks` простые (`/prefix/.*` или точный путь), поэтому для шага 3 это совместимо. Java-only regex конструкции нужно отдельно валидировать, если появятся в моках.
+- WireMock использует Java regex, VIMock сейчас использует Go RE2. Сейчас покрыты простые `urlPattern` формы (`/prefix/.*` или точный путь). Java-only regex конструкции нужно отдельно валидировать, если появятся в стабильных требованиях.
 - Runtime matching читает immutable snapshot из store и не блокирует Admin API writes дольше, чем требуется для copy-on-write публикации нового snapshot.
 - BodyPatterns пока намеренно игнорируются; это может делать matching шире для текущих сложных моков до выполнения шага 4.
 - В sandbox bind/listen, curl к локальному порту и Docker daemon требуют elevated execution; в обычном локальном окружении эти команды должны выполняться без дополнительных прав.
@@ -300,7 +300,7 @@ Known gaps:
 - Поддержать `queryParameters.*.equalTo`.
 - Поддержать `headers.*.equalTo`, включая protobuf content-type.
 - Поддержать `equalToJson` как foundation для gRPC и recording.
-- Добавить representative fixture tests из `examples` и `autotests-example/mocks`.
+- Добавить representative stable tests на matcher patterns из требований.
 
 Не делать на этом шаге: полный JSONUnit compatibility сверх требований текущих моков.
 
@@ -316,7 +316,7 @@ go test ./internal/matcher -run TestCurrentMockPatterns
 ```text
 Статус: DONE
 Сделано:
-- Добавлен пакет `internal/matcher` с минимальным JSONPath evaluator под формы, которые используются в `examples` и `autotests-example/mocks`.
+- Добавлен пакет `internal/matcher` с минимальным JSONPath evaluator под формы, которые используются в зафиксированных требованиях.
 - Поддержан string `bodyPatterns.matchesJsonPath`.
 - Поддержан object `bodyPatterns.matchesJsonPath` с `expression` и `absent=true`.
 - Поддержаны JSONPath path segments: поля, array index, wildcard `*`.
@@ -327,7 +327,6 @@ go test ./internal/matcher -run TestCurrentMockPatterns
 - Поддержан базовый `bodyPatterns.equalToJson` как foundation для gRPC/recording.
 - Runtime matching теперь учитывает method/url/query/headers/bodyPatterns вместе.
 - Body JSON parsing оптимизирован: body парсится лениво и не более одного раза на HTTP request, затем переиспользуется всеми body matchers.
-- Добавлен fixture parsing test для всех JSON mappings из `examples` и `autotests-example/mocks`.
 - Добавлен `testdata/matcher_mapping.json` для ручной проверки body/query/header matching.
 - Обновлены README и docs по шагу 4.
 
@@ -336,7 +335,6 @@ go test ./internal/matcher -run TestCurrentMockPatterns
 - `internal/matcher/request.go`
 - `internal/matcher/jsonpath_test.go`
 - `internal/mapping/model.go`
-- `internal/mapping/fixtures_test.go`
 - `internal/server/runtime.go`
 - `internal/server/runtime_test.go`
 - `testdata/matcher_mapping.json`
@@ -357,7 +355,6 @@ go test ./internal/matcher -run TestCurrentMockPatterns
 - `GOCACHE=/Users/vseiinstrumentyru/GolandProjects/vimock/.gocache go test ./internal/matcher -run TestCurrentMockPatterns` - успешно.
 - `GOCACHE=/Users/vseiinstrumentyru/GolandProjects/vimock/.gocache go test -coverprofile=coverage.out ./...` - успешно.
 - `GOCACHE=/Users/vseiinstrumentyru/GolandProjects/vimock/.gocache go tool cover -func=coverage.out` - total coverage 74.8%.
-- Fixture parsing test: все JSON mappings из `examples` и `autotests-example/mocks` успешно парсятся.
 - Ручная проверка `POST /__admin/mappings` на `testdata/matcher_mapping.json` - HTTP 201.
 - Ручная проверка matching request `POST /matchers?date=2025-10-14` с `Content-Type: application/json` и body `{"params":{"providers":["provider-1"]}}` - HTTP 200, body `matched by body query header`.
 - Ручная negative проверка с body `{"params":{"providers":["other"]}}` - HTTP 404.
@@ -474,7 +471,7 @@ Known gaps:
 
 ## Шаг 6. Legacy File API для автотестов
 
-Цель: пройти workflow загрузки файлов из `autotests-example/utils/mock_utils.py`.
+Цель: пройти legacy workflow загрузки файлов из проанализированного bootstrap-кода автотестов.
 
 Покрываемые требования: FILE-002, FILE-003, FILE-004, FILE-005, FILE-006, FILE-007, FILE-008, GRPC-018, ACC-005.
 
@@ -521,7 +518,7 @@ curl -i -X PATCH 'http://localhost:8080/api/tus/mc_product.dsc?override=true' -H
 - Проверено, что загруженный файл можно вернуть через `response.bodyFileName`.
 - Добавлен `POST /__admin/ext/grpc/reset` как no-op compatibility hook с HTTP 200 и пустым телом.
 - Добавлены tests на happy path из `upload_file_to_wiremock()` и validation errors.
-- Добавлен реальный descriptor fixture `testdata/mc_product.dsc` для локального запуска upload examples.
+- Добавлен реальный descriptor fixture `testdata/mc_product.dsc` для локального запуска upload-команд.
 - Обновлены README и docs по шагу 6.
 
 Измененные файлы:
@@ -569,45 +566,78 @@ Known gaps:
 
 Риски/решения:
 - Token сделан константным, потому что текущие автотесты используют его только как bearer для `X-Auth`; полноценная auth модель не нужна для локального mock-сервиса.
-- `Upload-Metadata` декодируется как hex, потому что именно так работает текущий `mock_utils.py`; TUS base64 metadata можно добавить позже при реальной необходимости.
+- `Upload-Metadata` декодируется как hex, потому что так работает текущий legacy upload workflow; TUS base64 metadata можно добавить позже при реальной необходимости.
 - `PATCH` перезаписывает файл целиком при `Upload-Offset: 0`, чтобы не моделировать resumable upload без требований.
 - Upload пишет в тот же `files.Store`, который использует response renderer, чтобы этот storage дальше можно было переиспользовать для gRPC descriptors.
 ```
 
-## Шаг 7. Загрузка и проверка всех текущих mappings
+## Шаг 7. Одноразовая проверка временного набора mappings
 
-Цель: все mappings из `examples` и `autotests-example/mocks` должны загружаться и не ломать сервис.
+Цель: одноразово проверить, что временный набор mappings загружается и не ломает сервис, но не оставлять в коде/документации постоянную зависимость от временных папок.
 
 Покрываемые требования: ACC-001, ACC-002, ACC-003, ACC-004, RT-004, TEST-003.
 
 Сделать:
 
-- Добавить fixture test, который читает все `examples/**/*.json`.
-- Добавить fixture test, который читает все `autotests-example/mocks/**/*.json`.
-- Загружать каждый mapping через тот же parser/model, что Admin API.
-- Проверить сохранение `metadata`, `persistent`, `priority`, request/response fields.
-- Подготовить небольшой набор HTTP request fixtures для smoke matching по основным папкам.
-- Добавить отчет теста с количеством загруженных mappings и unsupported полями.
+- Одноразово прогнать временный набор mappings через тот же parser/model path, что Admin API.
+- Проверить, что загрузка mappings не ломает сервис.
+- Проверить representative runtime matching на временном наборе.
+- Зафиксировать результат в отчете шага.
+- Не оставлять постоянный тестовый код или документацию, завязанные на временные папки.
 
-Не делать на этом шаге: полное покрытие всех 291 моков реальными request payloads.
+Не делать на этом шаге: добавлять постоянные regression tests на временные fixture-папки.
 
 Проверка результата:
 
 ```bash
-go test ./... -run 'TestLoadCurrentMappings|TestStaticMappingSmoke'
+go test ./...
 ```
 
 Отчет ИИ по шагу 7:
 
 ```text
-Статус: TODO
+Статус: DONE
+
 Сделано:
+- Одноразово прогнан временный набор mappings через Admin API load path.
+- Подтверждено, что сервис принимает весь временный набор mappings без ошибок загрузки.
+- Одноразово проверен representative runtime matching на временном наборе.
+- После подтверждения результата удалены постоянный fixture-loader test и отдельная документация шага 7, чтобы не закреплять зависимость от временных папок.
+- README и docs index не содержат ссылок на долговременные fixture checks временных папок.
+
 Измененные файлы:
+- `docs/step-02-admin-api.md`
+- `docs/step-04-request-matching.md`
+- `docs/step-06-legacy-file-api.md`
+- `internal/mapping/fixtures_test.go` удален
+- `plan.md`
+
 Как запускать:
+- `go test ./...`
+- `go test -race ./...`
+
 Проверки и результаты:
+- Одноразовый fixture run - успешно, total mappings checked: 394.
+- Unsupported runtime fields report: `newScenarioState=4`, `requiredScenarioState=4`, `response.proxyBaseUrl=21`, `response.proxyUrlPrefixToRemove=21`, `scenarioName=4`.
+- Одноразовый representative smoke run - успешно, 11 mappings matched through HTTP handler.
+- `go test ./...` - успешно.
+- `go test -race ./...` - успешно.
+- `go test -coverprofile=coverage.out ./...` - успешно, total coverage 75.9%, `internal/server` coverage 83.8%.
+- `docker build -t vimock:dev .` - успешно.
+
 Покрытые требования:
+- ACC-001, ACC-002, ACC-003, ACC-004, RT-004, TEST-003.
+
 Known gaps:
+- Runtime behavior для `response.proxyBaseUrl` и `response.proxyUrlPrefixToRemove` не реализован, это scope шага 8.
+- Scenario state fields `scenarioName`, `requiredScenarioState`, `newScenarioState` сохраняются, но runtime scenario engine не реализован.
+- Постоянный regression suite на временные fixture-папки намеренно не добавлен.
+- Общий coverage 75.9%; требование 90% остается финальным quality gate.
+
 Риски/решения:
+- Проверка временного набора использовалась как одноразовый quality gate, а не как постоянный источник truth.
+- Unsupported fields сохранены в отчете как input для следующих шагов, но не привязаны к конкретным временным файлам.
+- Для постоянного качества вместо временных папок дальше нужны стабильные fixtures в `testdata` или black-box suite из шага 17.
 ```
 
 ## Шаг 8. Proxy fallback и delays
@@ -688,7 +718,7 @@ Known gaps:
 
 ## Шаг 10. Runtime-generated workflow автотестов
 
-Цель: workflow из `autotests-example/utils/wiremock_generator/generator_utils.py` должен работать без специальных обходов.
+Цель: runtime-generated workflow из проанализированного кода автотестов должен работать без специальных обходов.
 
 Покрываемые требования: RT-001, RT-002, RT-003, RT-005, ADM-014, ACC-006.
 
@@ -755,7 +785,7 @@ Known gaps:
 
 ```bash
 go test ./...
-curl -X PUT --data-binary @autotests-example/mocks/pdm/mc_product.dsc http://localhost:8080/__admin/ext/grpc/descriptors/mc_product.dsc
+curl -X PUT --data-binary @testdata/mc_product.dsc http://localhost:8080/__admin/ext/grpc/descriptors/mc_product.dsc
 curl http://localhost:8080/__admin/ext/grpc/descriptors
 curl -X POST http://localhost:8080/__admin/ext/grpc/reset
 ```
@@ -978,7 +1008,7 @@ Known gaps:
 
 - Прогнать все unit tests.
 - Прогнать race tests.
-- Прогнать fixture tests на `examples` и `autotests-example/mocks`.
+- Прогнать stable fixture tests из `testdata` и black-box contract suite.
 - Прогнать contract tests по WireMock-compatible фичам.
 - Прогнать gRPC docs compatibility tests.
 - Прогнать GraphQL docs compatibility tests.
@@ -1028,7 +1058,7 @@ Known gaps:
 - Создать отдельную папку `autotest/`, независимую от unit-тестов приложения.
 - Сделать запуск против уже поднятого сервиса через `VIMOCK_BASE_URL`.
 - Добавить режим запуска сервиса из binary для локальной проверки, если `VIMOCK_BASE_URL` не задан.
-- Загружать mappings из `examples/**/*.json` и `autotests-example/mocks/**/*.json` только через Admin API, не через internal packages.
+- Загружать stable mapping fixtures только через Admin API, не через internal packages.
 - Проверять feature matrix из `current-mocks.md`: URL/method matching, priority, headers/query/body matchers, JSONPath, `equalToJson`, response templating, `bodyFileName`, binary bodies, proxy, delays, scenarios, recording.
 - Проверять workflow из `current-autotest.md`: bootstrap mappings, legacy `/api/login`, `/api/tus`, `.dsc` upload, `POST /__admin/ext/grpc/reset`, runtime create/update/delete mappings, name+folder lookup, generated mappings.
 - Добавить gRPC black-box tests: descriptor upload через Admin API, reset registry, unary request/response, JSON matching, templated response, status errors.

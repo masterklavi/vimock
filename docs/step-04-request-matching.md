@@ -11,7 +11,7 @@
 - `request.queryParameters.*.equalTo`.
 - `request.headers.*.equalTo`.
 - `bodyPatterns.equalToJson` as a basic JSON equality matcher.
-- Fixture parsing test for all JSON mappings in `examples` and `autotests-example/mocks`.
+- Stable matcher fixtures in `testdata`.
 
 ## Supported JSONPath Examples
 

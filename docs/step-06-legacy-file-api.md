@@ -13,7 +13,7 @@
 
 ## Current Scope
 
-This step implements the file workflow used by `autotests-example/utils/mock_utils.py`.
+This step implements the legacy file workflow observed in the analyzed autotest bootstrap code.
 
 The repository includes a real PDM descriptor fixture for local checks:
 

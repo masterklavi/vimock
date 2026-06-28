@@ -60,7 +60,7 @@ go run ./cmd/vimock
 ```bash
 curl -X POST http://localhost:8080/__admin/mappings \
   -H 'Content-Type: application/json' \
-  --data-binary @examples/druz/Fry/fry_proxy.json
+  --data-binary @testdata/simple_body_mapping.json
 ```
 
 ```bash
