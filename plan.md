@@ -821,7 +821,7 @@ Known gaps:
 
 Цель: runtime-generated workflow из проанализированного кода автотестов должен работать без специальных обходов.
 
-Покрываемые требования: RT-001, RT-002, RT-003, RT-005, ADM-014, ACC-006.
+Покрываемые требования: RT-001, RT-002, RT-003, RT-004, RT-005, ADM-014, ACC-006.
 
 Сделать:
 
@@ -843,14 +843,51 @@ go test ./... -run 'TestRuntimeGeneratedWorkflow|TestAutotestMappingLifecycle'
 Отчет ИИ по шагу 10:
 
 ```text
-Статус: TODO
+Статус: DONE
 Сделано:
+- Добавлен in-process end-to-end test `TestRuntimeGeneratedWorkflow` для runtime-generated mapping lifecycle.
+- Тест проверяет `POST /__admin/mappings` для generated mappings без `id` и наличие generated `id` в response.
+- Тест проверяет, что runtime mapping активен сразу после создания и матчится через реальные request matchers/runtime response pipeline.
+- Тест покрывает representative generated mappings для PDM/gRPC-compatible flow, ShCat, Officer, Susanin, Vanga, Courier/Frodo и Fry.
+- Для PDM/gRPC-compatible generated mapping проверен `POST /__admin/ext/grpc/reset` после создания.
+- Тест проверяет cleanup через `DELETE /__admin/mappings/{id}`.
+- Тест проверяет repeated delete semantics: повторный `DELETE /__admin/mappings/{id}` возвращает `404`.
+- Добавлен `TestAutotestMappingLifecycle`, который имитирует reload static mapping: `GET /__admin/mappings`, поиск по `name` и `metadata.wiremock-gui.folder`, затем `PUT /__admin/mappings/{id}`.
+- Проверено, что после `PUT` обновленный mapping активен сразу.
+- Representative generated mappings зафиксированы inline в тестах, без зависимости от временных fixture directories.
+- Обновлены README и docs по шагу 10.
+
 Измененные файлы:
+- `internal/server/autotest_workflow_test.go`
+- `README.md`
+- `docs/README.md`
+- `docs/step-10-runtime-generated-workflow.md`
+- `plan.md`
+
 Как запускать:
+- `go test ./... -run 'TestRuntimeGeneratedWorkflow|TestAutotestMappingLifecycle'`
+- `go test ./internal/server -run 'TestRuntimeGeneratedWorkflow|TestAutotestMappingLifecycle'`
+- `go test ./...`
+
 Проверки и результаты:
+- `GOCACHE=/Users/vseiinstrumentyru/GolandProjects/vimock/.gocache go test ./internal/server -run 'TestRuntimeGeneratedWorkflow|TestAutotestMappingLifecycle' -count=1` - успешно.
+- `GOCACHE=/Users/vseiinstrumentyru/GolandProjects/vimock/.gocache go test ./... -run 'TestRuntimeGeneratedWorkflow|TestAutotestMappingLifecycle'` - успешно.
+- `GOCACHE=/Users/vseiinstrumentyru/GolandProjects/vimock/.gocache go test ./...` - успешно.
+- `GOCACHE=/Users/vseiinstrumentyru/GolandProjects/vimock/.gocache go test -coverprofile=coverage.out ./...` - успешно.
+- `GOCACHE=/Users/vseiinstrumentyru/GolandProjects/vimock/.gocache go tool cover -func=coverage.out` - total coverage 73.1%.
+
 Покрытые требования:
+- RT-001, RT-002, RT-003, RT-004, RT-005, ADM-014, ACC-006.
+
 Known gaps:
+- Полный запуск внешнего набора автотестов не выполнялся, потому что шаг 10 ограничен in-process contract tests.
+- Black-box API автотесты остаются scope шага 17.
+- Общий coverage 73.1%; требование 90% остается финальным quality gate.
+
 Риски/решения:
+- Representative generated mappings держатся прямо в Go tests, чтобы не создавать постоянную зависимость от временных fixture directories.
+- Тесты используют `httptest` handler, поэтому не требуют bind/listen permissions и работают стабильно в sandbox/CI.
+- PDM/gRPC-compatible flow на этом шаге проверяет HTTP mapping lifecycle и reset hook; полноценное gRPC исполнение остается scope шагов 11-12.
 ```
 
 ## Шаг 11. gRPC descriptor registry и transport base
@@ -1219,7 +1256,7 @@ Known gaps:
 | 7 | ACC-001, ACC-002, ACC-003, ACC-004, RT-004, TEST-003 |
 | 8 | PROXY-001, PROXY-002, PROXY-003, RESP-012 |
 | 9 | SCN-001, SCN-002, SCN-003, SCN-004, SCN-005, SCN-006 |
-| 10 | RT-001, RT-002, RT-003, RT-005, ADM-014, ACC-006 |
+| 10 | RT-001, RT-002, RT-003, RT-004, RT-005, ADM-014, ACC-006 |
 | 11 | PROTO-003, PROTO-004, GRPC-001, GRPC-002, GRPC-011, GRPC-012, GRPC-013, GRPC-014, GRPC-015, GRPC-016, GRPC-017, GRPC-018, FILE-011 |
 | 12 | GRPC-003, GRPC-004, GRPC-005, GRPC-006, GRPC-007, GRPC-008, GRPC-009, GRPC-010, MATCH-011, ACC-007 |
 | 13 | PROTO-005, GQL-001, GQL-002, GQL-003, GQL-004, GQL-005, GQL-006, GQL-007, GQL-008, GQL-009, GQL-010, GQL-011, ACC-008 |

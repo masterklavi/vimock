@@ -58,6 +58,8 @@ Tag pushes create GitHub Release assets for Linux and macOS on `amd64` and `arm6
 - Admin API: `POST /__admin/mappings`.
 - Admin API: `PUT /__admin/mappings/{id}`.
 - Admin API: `DELETE /__admin/mappings/{id}`.
+- Runtime-generated mapping lifecycle: create, use immediately, delete, tolerate repeated delete as `404`.
+- Static mapping reload workflow: list by `name` and `metadata.wiremock-gui.folder`, then update through `PUT /__admin/mappings/{id}`.
 - Mapping fields: `id`, `name`, `persistent`, `priority`, `request`, `response`, `metadata`.
 - Unknown mapping fields are preserved in Admin API responses.
 - Basic HTTP stubbing for non-Admin requests.
@@ -112,10 +114,11 @@ Tag pushes create GitHub Release assets for Linux and macOS on `amd64` and `arm6
 - [Step 6: Legacy File API](docs/step-06-legacy-file-api.md)
 - [Step 8: Proxy and delays](docs/step-08-proxy-and-delays.md)
 - [Step 9: Stateful scenarios](docs/step-09-stateful-scenarios.md)
+- [Step 10: Runtime-generated workflow](docs/step-10-runtime-generated-workflow.md)
 
 ## Scope guardrails
 
-The current implementation is incremental. It includes the service bootstrap, port configuration, stdout logging, health/readiness endpoints, Admin API CRUD for mappings, basic HTTP stubbing, request matching needed by current mocks, targeted response templating, in-memory body files, proxy fallback, delays, stateful scenarios, and the legacy file upload workflow used by current autotests.
+The current implementation is incremental. It includes the service bootstrap, port configuration, stdout logging, health/readiness endpoints, Admin API CRUD for mappings, basic HTTP stubbing, request matching needed by current mocks, targeted response templating, in-memory body files, proxy fallback, delays, stateful scenarios, runtime-generated mapping lifecycle checks, and the legacy file upload workflow used by current autotests.
 
 Advanced request matching beyond current fixtures, full WireMock response templating, full TUS support, recording, gRPC, and GraphQL are intentionally added in separate increments described in `plan.md`.
 
