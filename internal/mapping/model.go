@@ -6,15 +6,38 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"regexp"
+	"strings"
 )
+
+const DefaultPriority = 5
 
 // Mapping is a WireMock stub mapping with parsed top-level fields and preserved raw JSON.
 type Mapping struct {
 	id         string
 	name       string
 	persistent bool
+	priority   int
+	request    RequestPattern
+	response   ResponseDefinition
 	raw        map[string]json.RawMessage
 	sequence   uint64
+}
+
+type RequestPattern struct {
+	Method     string
+	URL        string
+	URLPath    string
+	URLPattern string
+
+	urlRegex *regexp.Regexp
+}
+
+type ResponseDefinition struct {
+	Status  int
+	Headers map[string][]string
+	Body    []byte
+	JSON    bool
 }
 
 func ParseJSON(data []byte) (Mapping, error) {
@@ -58,6 +81,10 @@ func ParseJSONWithID(data []byte, overrideID string) (Mapping, error) {
 	if err != nil {
 		return Mapping{}, err
 	}
+	priority, err := intField(raw, "priority", DefaultPriority)
+	if err != nil {
+		return Mapping{}, err
+	}
 	if err := validateObjectField(raw, "request", true); err != nil {
 		return Mapping{}, err
 	}
@@ -67,11 +94,22 @@ func ParseJSONWithID(data []byte, overrideID string) (Mapping, error) {
 	if err := validateObjectField(raw, "metadata", false); err != nil {
 		return Mapping{}, err
 	}
+	request, err := parseRequest(raw["request"])
+	if err != nil {
+		return Mapping{}, err
+	}
+	response, err := parseResponse(raw["response"])
+	if err != nil {
+		return Mapping{}, err
+	}
 
 	mapping := Mapping{
 		id:         id,
 		name:       name,
 		persistent: persistent,
+		priority:   priority,
+		request:    request,
+		response:   response,
 		raw:        cloneRawMap(raw),
 	}
 	mapping.raw["id"] = mustMarshalRaw(id)
@@ -93,6 +131,23 @@ func (m Mapping) Persistent() bool {
 
 func (m Mapping) Sequence() uint64 {
 	return m.sequence
+}
+
+func (m Mapping) Priority() int {
+	return m.priority
+}
+
+func (m Mapping) Request() RequestPattern {
+	return m.request
+}
+
+func (m Mapping) Response() ResponseDefinition {
+	return ResponseDefinition{
+		Status:  m.response.Status,
+		Headers: cloneHeaders(m.response.Headers),
+		Body:    cloneBytes(m.response.Body),
+		JSON:    m.response.JSON,
+	}
 }
 
 func (m Mapping) WithID(id string) (Mapping, error) {
@@ -162,6 +217,19 @@ func boolField(raw map[string]json.RawMessage, field string) (bool, error) {
 	return parsed, nil
 }
 
+func intField(raw map[string]json.RawMessage, field string, fallback int) (int, error) {
+	value, ok := raw[field]
+	if !ok || len(value) == 0 || bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+		return fallback, nil
+	}
+
+	var parsed int
+	if err := json.Unmarshal(value, &parsed); err != nil {
+		return 0, fmt.Errorf("%s must be an integer", field)
+	}
+	return parsed, nil
+}
+
 func validateObjectField(raw map[string]json.RawMessage, field string, required bool) error {
 	value, ok := raw[field]
 	if !ok {
@@ -178,6 +246,154 @@ func validateObjectField(raw map[string]json.RawMessage, field string, required 
 	return nil
 }
 
+func parseRequest(raw json.RawMessage) (RequestPattern, error) {
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &object); err != nil || object == nil {
+		return RequestPattern{}, fmt.Errorf("request must be a JSON object")
+	}
+
+	method, err := stringField(object, "method")
+	if err != nil {
+		return RequestPattern{}, err
+	}
+	url, err := stringField(object, "url")
+	if err != nil {
+		return RequestPattern{}, err
+	}
+	urlPath, err := stringField(object, "urlPath")
+	if err != nil {
+		return RequestPattern{}, err
+	}
+	urlPattern, err := stringField(object, "urlPattern")
+	if err != nil {
+		return RequestPattern{}, err
+	}
+
+	var urlRegex *regexp.Regexp
+	if urlPattern != "" {
+		urlRegex, err = regexp.Compile(urlPattern)
+		if err != nil {
+			return RequestPattern{}, fmt.Errorf("request.urlPattern must be a valid regexp: %w", err)
+		}
+	}
+
+	return RequestPattern{
+		Method:     strings.ToUpper(method),
+		URL:        url,
+		URLPath:    urlPath,
+		URLPattern: urlPattern,
+		urlRegex:   urlRegex,
+	}, nil
+}
+
+func (p RequestPattern) Matches(method, requestURI, path string) bool {
+	if !p.matchesMethod(method) {
+		return false
+	}
+	if p.URL != "" {
+		return requestURI == p.URL
+	}
+	if p.URLPath != "" {
+		return path == p.URLPath
+	}
+	if p.urlRegex != nil {
+		match := p.urlRegex.FindStringIndex(requestURI)
+		return len(match) == 2 && match[0] == 0 && match[1] == len(requestURI)
+	}
+	return false
+}
+
+func (p RequestPattern) matchesMethod(method string) bool {
+	switch p.Method {
+	case "ANY":
+		return true
+	case "GET", "POST":
+		return strings.EqualFold(p.Method, method)
+	default:
+		return false
+	}
+}
+
+func parseResponse(raw json.RawMessage) (ResponseDefinition, error) {
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &object); err != nil || object == nil {
+		return ResponseDefinition{}, fmt.Errorf("response must be a JSON object")
+	}
+
+	status, err := intField(object, "status", httpStatusOK)
+	if err != nil {
+		return ResponseDefinition{}, err
+	}
+	if status < 100 || status > 999 {
+		return ResponseDefinition{}, fmt.Errorf("response.status must be between 100 and 999")
+	}
+
+	headers, err := parseHeaders(object["headers"])
+	if err != nil {
+		return ResponseDefinition{}, err
+	}
+
+	body, isJSON, err := parseResponseBody(object)
+	if err != nil {
+		return ResponseDefinition{}, err
+	}
+
+	return ResponseDefinition{
+		Status:  status,
+		Headers: headers,
+		Body:    body,
+		JSON:    isJSON,
+	}, nil
+}
+
+const httpStatusOK = 200
+
+func parseHeaders(raw json.RawMessage) (map[string][]string, error) {
+	if len(raw) == 0 || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return nil, nil
+	}
+
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &object); err != nil || object == nil {
+		return nil, fmt.Errorf("response.headers must be a JSON object")
+	}
+
+	headers := make(map[string][]string, len(object))
+	for name, rawValue := range object {
+		var value string
+		if err := json.Unmarshal(rawValue, &value); err == nil {
+			headers[name] = []string{value}
+			continue
+		}
+
+		var values []string
+		if err := json.Unmarshal(rawValue, &values); err == nil {
+			headers[name] = values
+			continue
+		}
+
+		return nil, fmt.Errorf("response.headers.%s must be a string or string array", name)
+	}
+	return headers, nil
+}
+
+func parseResponseBody(object map[string]json.RawMessage) ([]byte, bool, error) {
+	if raw, ok := object["jsonBody"]; ok {
+		return cloneBytes(raw), true, nil
+	}
+
+	raw, ok := object["body"]
+	if !ok || len(raw) == 0 || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return nil, false, nil
+	}
+
+	var body string
+	if err := json.Unmarshal(raw, &body); err != nil {
+		return nil, false, fmt.Errorf("response.body must be a string")
+	}
+	return []byte(body), false, nil
+}
+
 func cloneRawMap(source map[string]json.RawMessage) map[string]json.RawMessage {
 	clone := make(map[string]json.RawMessage, len(source))
 	for key, value := range source {
@@ -187,11 +403,26 @@ func cloneRawMap(source map[string]json.RawMessage) map[string]json.RawMessage {
 }
 
 func cloneRaw(source json.RawMessage) json.RawMessage {
+	return cloneBytes(source)
+}
+
+func cloneBytes(source []byte) []byte {
 	if source == nil {
 		return nil
 	}
 	clone := make([]byte, len(source))
 	copy(clone, source)
+	return clone
+}
+
+func cloneHeaders(source map[string][]string) map[string][]string {
+	if source == nil {
+		return nil
+	}
+	clone := make(map[string][]string, len(source))
+	for key, values := range source {
+		clone[key] = append([]string(nil), values...)
+	}
 	return clone
 }
 

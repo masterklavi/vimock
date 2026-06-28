@@ -28,6 +28,7 @@ func NewHandlerWithStore(logger *slog.Logger, mappings *mapping.Store) http.Hand
 	}
 
 	admin := adminAPI{mappings: mappings}
+	runtime := runtimeAPI{mappings: mappings}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /__admin/health", healthHandler)
 	mux.HandleFunc("GET /__admin/ready", readyHandler)
@@ -36,6 +37,7 @@ func NewHandlerWithStore(logger *slog.Logger, mappings *mapping.Store) http.Hand
 	mux.HandleFunc("GET /__admin/mappings/{id}", admin.getMapping)
 	mux.HandleFunc("PUT /__admin/mappings/{id}", admin.updateMapping)
 	mux.HandleFunc("DELETE /__admin/mappings/{id}", admin.deleteMapping)
+	mux.HandleFunc("/", runtime.serveHTTP)
 
 	return loggingMiddleware(logger, mux)
 }

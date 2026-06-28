@@ -1,0 +1,15 @@
+{
+  "name": "simple body mapping",
+  "request": {
+    "method": "GET",
+    "urlPath": "/some/path"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "text/plain"
+    },
+    "body": "hello from vimock"
+  },
+  "priority": 1
+}

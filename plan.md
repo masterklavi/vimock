@@ -230,14 +230,59 @@ curl -i http://localhost:8080/some/path
 Отчет ИИ по шагу 3:
 
 ```text
-Статус: TODO
+Статус: DONE
 Сделано:
+- Добавлен runtime router для всех не-Admin HTTP requests через fallback handler `/`.
+- Admin paths `/__admin` и `/__admin/*` защищены от попадания в runtime matching и для неизвестных Admin routes возвращают обычный 404.
+- В `mapping.Mapping` добавлена типизированная runtime-часть: `priority`, `request.method`, `request.url`, `request.urlPath`, `request.urlPattern`, `response.status`, `response.headers`, `response.body`, `response.jsonBody`.
+- Для `request.method` поддержаны `ANY`, `GET`, `POST`.
+- Для `request.url` реализован exact match по path+query.
+- Для `request.urlPath` реализован exact match только по path, query игнорируется.
+- Для `request.urlPattern` реализован full regex match по path+query, как WireMock Java `Pattern.matcher(value).matches()`.
+- Реализован выбор mapping-а по меньшему `priority`; если priority равен, используется порядок добавления mapping-а.
+- Реализован fallback proxy mapping selection: mapping с `priority=10` проигрывает более приоритетным точным stubs и выбирается только если они не подошли.
+- Реализован response writer для `status`, `headers`, `body`, `jsonBody`; для `jsonBody` без явного `Content-Type` выставляется `application/json`.
+- Реализован WireMock-like 404 для unmatched request без mappings: text/plain body `No response could be served as there are no stub mappings in this WireMock instance.`
+- Добавлен `testdata/simple_body_mapping.json` для ручной проверки команды из плана.
+- Добавлены `httptest` tests на `url`, `urlPath`, `urlPattern`, `ANY`, priority, insertion-order tie-breaker, удаление mapping-а и no-mappings 404.
+
 Измененные файлы:
+- `internal/mapping/model.go`
+- `internal/server/runtime.go`
+- `internal/server/runtime_test.go`
+- `internal/server/server.go`
+- `testdata/simple_body_mapping.json`
+- `plan.md`
+
 Как запускать:
+- `go run ./cmd/vimock`
+- `curl -X POST http://localhost:8080/__admin/mappings -H 'Content-Type: application/json' --data-binary @testdata/simple_body_mapping.json`
+- `curl -i http://localhost:8080/some/path`
+
 Проверки и результаты:
+- `GOCACHE=/Users/vseiinstrumentyru/GolandProjects/vimock/.gocache go test ./...` - успешно.
+- `GOCACHE=/Users/vseiinstrumentyru/GolandProjects/vimock/.gocache go test -race ./...` - успешно.
+- `GOCACHE=/Users/vseiinstrumentyru/GolandProjects/vimock/.gocache go test -coverprofile=coverage.out ./...` - успешно.
+- `GOCACHE=/Users/vseiinstrumentyru/GolandProjects/vimock/.gocache go tool cover -func=coverage.out` - total coverage 71.3%.
+- Ручная проверка `POST /__admin/mappings` на `testdata/simple_body_mapping.json` - HTTP 201, mapping загружен.
+- Ручная проверка `GET /some/path` после загрузки mapping-а - HTTP 200, `Content-Type: text/plain`, body `hello from vimock`.
+- `docker build -t vimock:dev .` - успешно.
+
 Покрытые требования:
+- MAP-005, MAP-006, MAP-007, MAP-008, MAP-009, RESP-001, RESP-002, RESP-003, RESP-004, RESP-010, NFR-002, NFR-005.
+
 Known gaps:
+- Body/query/header matchers не реализованы, это scope шага 4.
+- `response-template`, request-based response values и body files не реализованы, это scope шага 5.
+- `response.proxyBaseUrl` пока не выполняет upstream proxying; на этом шаге покрыт только fallback selection по priority, само proxying будет добавлено на отдельном шаге.
+- WireMock near-miss diff для unmatched request пока не реализован; возвращается простой WireMock-like 404.
+- Общий coverage пока 71.3%; требование 90% остается финальным quality gate.
+
 Риски/решения:
+- WireMock использует Java regex, VIMock сейчас использует Go RE2. Текущие `urlPattern` из `examples` и `autotests-example/mocks` простые (`/prefix/.*` или точный путь), поэтому для шага 3 это совместимо. Java-only regex конструкции нужно отдельно валидировать, если появятся в моках.
+- Runtime matching читает immutable snapshot из store и не блокирует Admin API writes дольше, чем требуется для copy-on-write публикации нового snapshot.
+- BodyPatterns пока намеренно игнорируются; это может делать matching шире для текущих сложных моков до выполнения шага 4.
+- В sandbox bind/listen, curl к локальному порту и Docker daemon требуют elevated execution; в обычном локальном окружении эти команды должны выполняться без дополнительных прав.
 ```
 
 ## Шаг 4. Request matching для текущих моков
