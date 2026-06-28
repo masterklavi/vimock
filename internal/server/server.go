@@ -10,6 +10,7 @@ import (
 	"vimock/internal/grpcdesc"
 	"vimock/internal/mapping"
 	"vimock/internal/proxy"
+	"vimock/internal/recording"
 	"vimock/internal/response"
 	"vimock/internal/scenario"
 )
@@ -33,6 +34,12 @@ func NewHandlerWithStores(logger *slog.Logger, mappings *mapping.Store, fileStor
 }
 
 func NewHandlerWithStoresAndDescriptors(logger *slog.Logger, mappings *mapping.Store, fileStore files.Store, descriptorStore *grpcdesc.Store) http.Handler {
+	return NewHandlerWithStoresDescriptorsRecorderForwarder(logger, mappings, fileStore, descriptorStore, recording.NewStore(), proxy.NewForwarder(&http.Client{
+		Timeout: 30 * time.Second,
+	}))
+}
+
+func NewHandlerWithStoresDescriptorsRecorderForwarder(logger *slog.Logger, mappings *mapping.Store, fileStore files.Store, descriptorStore *grpcdesc.Store, recorder *recording.Store, forwarder proxy.Forwarder) http.Handler {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -45,6 +52,9 @@ func NewHandlerWithStoresAndDescriptors(logger *slog.Logger, mappings *mapping.S
 	if descriptorStore == nil {
 		descriptorStore = grpcdesc.NewStore()
 	}
+	if recorder == nil {
+		recorder = recording.NewStore()
+	}
 
 	scenarios := scenario.NewStore()
 	for _, stub := range mappings.List() {
@@ -55,6 +65,7 @@ func NewHandlerWithStoresAndDescriptors(logger *slog.Logger, mappings *mapping.S
 		mappings:    mappings,
 		scenarios:   scenarios,
 		descriptors: descriptorStore,
+		recorder:    recorder,
 	}
 	filesAPI := fileAPI{
 		files:       fileStore,
@@ -64,10 +75,9 @@ func NewHandlerWithStoresAndDescriptors(logger *slog.Logger, mappings *mapping.S
 		mappings:    mappings,
 		descriptors: descriptorStore,
 		renderer:    response.NewRenderer(fileStore),
-		forwarder: proxy.NewForwarder(&http.Client{
-			Timeout: 30 * time.Second,
-		}),
-		scenarios: scenarios,
+		forwarder:   forwarder,
+		scenarios:   scenarios,
+		recorder:    recorder,
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /__admin/health", healthHandler)
@@ -78,6 +88,9 @@ func NewHandlerWithStoresAndDescriptors(logger *slog.Logger, mappings *mapping.S
 	mux.HandleFunc("PUT /__admin/mappings/{id}", admin.updateMapping)
 	mux.HandleFunc("DELETE /__admin/mappings/{id}", admin.deleteMapping)
 	mux.HandleFunc("POST /__admin/scenarios/reset", admin.resetScenarios)
+	mux.HandleFunc("POST /__admin/recordings/start", admin.startRecording)
+	mux.HandleFunc("POST /__admin/recordings/stop", admin.stopRecording)
+	mux.HandleFunc("POST /__admin/recordings/snapshot", admin.snapshotRecording)
 	mux.HandleFunc("GET /__admin/ext/grpc/descriptors", admin.listGRPCDescriptors)
 	mux.HandleFunc("PUT /__admin/ext/grpc/descriptors/{fileName}", admin.putGRPCDescriptor)
 	mux.HandleFunc("DELETE /__admin/ext/grpc/descriptors/{fileName}", admin.deleteGRPCDescriptor)

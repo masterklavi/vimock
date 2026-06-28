@@ -14,6 +14,7 @@ import (
 	"vimock/internal/delay"
 	"vimock/internal/grpcdesc"
 	"vimock/internal/matcher"
+	"vimock/internal/recording"
 
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -108,10 +109,12 @@ func (a runtimeAPI) serveGRPC(w http.ResponseWriter, r *http.Request) {
 
 	if code, reason, ok := grpcStatusFromHeaders(rendered.Headers); ok {
 		if code != grpcStatusOK {
+			a.recordGRPCServeEvent(r, requestJSON, rendered.Status, rendered.Headers, nil)
 			writeGRPCErrorWithHeaders(w, rendered.Headers, code, reason)
 			return
 		}
 	} else if code, reason, ok := grpcStatusFromHTTP(rendered.Status); ok {
+		a.recordGRPCServeEvent(r, requestJSON, rendered.Status, rendered.Headers, nil)
 		writeGRPCErrorWithHeaders(w, rendered.Headers, code, reason)
 		return
 	}
@@ -122,7 +125,26 @@ func (a runtimeAPI) serveGRPC(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	a.recordGRPCServeEvent(r, requestJSON, rendered.Status, rendered.Headers, rendered.Body)
 	writeGRPCMessage(w, rendered.Headers, responsePayload)
+}
+
+func (a runtimeAPI) recordGRPCServeEvent(r *http.Request, requestJSON []byte, responseStatus int, responseHeaders http.Header, responseJSON []byte) {
+	if a.recorder == nil {
+		return
+	}
+	a.recorder.AddServeEvent(recording.ServeEvent{
+		Method:          http.MethodPost,
+		URL:             r.URL.Path,
+		Path:            r.URL.Path,
+		RequestHeaders:  r.Header,
+		RequestBody:     requestJSON,
+		ResponseStatus:  responseStatus,
+		ResponseHeaders: responseHeaders,
+		ResponseBody:    responseJSON,
+		Source:          recording.SourceStub,
+		Protocol:        recording.ProtocolGRPC,
+	})
 }
 
 func (a runtimeAPI) findGRPCMethod(path string) (grpcMethod, grpcdesc.Registry, bool) {

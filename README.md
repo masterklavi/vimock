@@ -81,6 +81,11 @@ Tag pushes create GitHub Release assets for Linux and macOS on `amd64` and `arm6
 - Binary response body files are returned without text recoding.
 - Proxy mappings via `response.proxyBaseUrl`.
 - Proxy prefix rewriting via `response.proxyUrlPrefixToRemove`.
+- Recording API: `POST /__admin/recordings/start`.
+- Recording API: `POST /__admin/recordings/stop`.
+- Snapshot API: `POST /__admin/recordings/snapshot`.
+- Recorded mappings are created in memory and activated after `stop` or `snapshot`.
+- Recorded binary response bodies use `base64Body`.
 - Response delays: `fixedDelayMilliseconds`, `delayDistribution`, `chunkedDribbleDelay`.
 - Stateful scenarios via `scenarioName`, `requiredScenarioState`, `newScenarioState`.
 - Scenario reset endpoint: `POST /__admin/scenarios/reset`.
@@ -109,7 +114,7 @@ Tag pushes create GitHub Release assets for Linux and macOS on `amd64` and `arm6
 - Full WireMock/Handlebars response template compatibility beyond `jsonPath request.body`.
 - Full TUS protocol beyond the current autotest upload workflow.
 - Static or persistent body file storage.
-- Recording and snapshotting.
+- Full WireMock recording spec parity beyond current `targetBaseUrl`, `captureHeaders`, `requestBodyPattern`, `persist` fields.
 - gRPC streaming support.
 - gRPC proxying and recording.
 - gRPC reflection over loaded descriptors.
@@ -133,12 +138,13 @@ Tag pushes create GitHub Release assets for Linux and macOS on `amd64` and `arm6
 - [Step 11: gRPC descriptor registry](docs/step-11-grpc-descriptor-registry.md)
 - [Step 12: gRPC stubbing runtime](docs/step-12-grpc-stubbing-runtime.md)
 - [Step 13: GraphQL semantic matcher](docs/step-13-graphql-semantic-matcher.md)
+- [Step 14: Recording and snapshotting](docs/step-14-recording-and-snapshotting.md)
 
 ## Scope guardrails
 
-The current implementation is incremental. It includes the service bootstrap, port configuration, stdout logging, health/readiness endpoints, Admin API CRUD for mappings, basic HTTP stubbing, request matching needed by current mocks, targeted response templating, in-memory body files, proxy fallback, delays, stateful scenarios, runtime-generated mapping lifecycle checks, the legacy file upload workflow used by current autotests, the gRPC descriptor registry foundation, unary gRPC stubbing runtime, and GraphQL semantic matching.
+The current implementation is incremental. It includes the service bootstrap, port configuration, stdout logging, health/readiness endpoints, Admin API CRUD for mappings, basic HTTP stubbing, request matching needed by current mocks, targeted response templating, in-memory body files, proxy fallback, recording/snapshotting, delays, stateful scenarios, runtime-generated mapping lifecycle checks, the legacy file upload workflow used by current autotests, the gRPC descriptor registry foundation, unary gRPC stubbing runtime, and GraphQL semantic matching.
 
-Advanced request matching beyond current fixtures, full WireMock response templating, full TUS support, recording, advanced gRPC features, and GraphQL federation-specific behavior are intentionally added in separate increments described in `plan.md`.
+Advanced request matching beyond current fixtures, full WireMock response templating, full TUS support, advanced recording modes, advanced gRPC features, and GraphQL federation-specific behavior are intentionally added in separate increments described in `plan.md`.
 
 ## License
 

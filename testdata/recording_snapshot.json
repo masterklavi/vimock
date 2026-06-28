@@ -1,0 +1,7 @@
+{
+  "captureHeaders": {
+    "X-Request-Id": {}
+  },
+  "requestBodyPattern": "equalToJson",
+  "persist": true
+}

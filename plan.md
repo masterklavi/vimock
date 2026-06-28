@@ -1242,14 +1242,80 @@ curl -X POST http://localhost:8080/__admin/recordings/stop
 Отчет ИИ по шагу 14:
 
 ```text
-Статус: TODO
+Статус: DONE
 Сделано:
+- Добавлен in-memory recording store для active recording sessions и serve events.
+- Реализован `POST /__admin/recordings/start`.
+- Реализован `POST /__admin/recordings/stop`.
+- Реализован `POST /__admin/recordings/snapshot`.
+- Active recording проксирует unmatched HTTP requests к `targetBaseUrl`.
+- `stop` строит mappings из записанных proxied events и активирует их в in-memory mapping store.
+- `snapshot` строит mappings из накопленных serve events и активирует их.
+- Serve events пишутся для обычных HTTP stub responses, proxy responses и matched unary gRPC responses.
+- Поддержан `captureHeaders` для записи выбранных request headers как `request.headers.*.equalTo`.
+- JSON request bodies записываются как `bodyPatterns.equalToJson`.
+- JSON response bodies записываются как `jsonBody`.
+- Text response bodies записываются как `body`.
+- Binary response bodies записываются как `base64Body`.
+- Mapping runtime теперь умеет читать `response.base64Body`.
+- Request method matcher больше не ограничен только `GET`/`POST`, чтобы recorded mappings могли использовать другие HTTP methods.
+- Добавлены примеры `testdata/recording_start.json` и `testdata/recording_snapshot.json`.
+- README и docs обновлены по шагу 14.
+
 Измененные файлы:
+- `internal/recording/store.go`
+- `internal/recording/store_test.go`
+- `internal/mapping/model.go`
+- `internal/server/admin.go`
+- `internal/server/runtime.go`
+- `internal/server/grpc_runtime.go`
+- `internal/server/server.go`
+- `internal/server/recording_test.go`
+- `testdata/recording_start.json`
+- `testdata/recording_snapshot.json`
+- `README.md`
+- `docs/README.md`
+- `docs/step-14-recording-and-snapshotting.md`
+- `plan.md`
+
 Как запускать:
+- `curl -i -X POST http://localhost:8080/__admin/recordings/start -H 'Content-Type: application/json' --data-binary @testdata/recording_start.json`
+- `curl -i http://localhost:8080/api/products/123 -H 'X-Request-Id: req-1'`
+- `curl -i -X POST http://localhost:8080/__admin/recordings/stop`
+- `curl -s http://localhost:8080/__admin/mappings`
+- `curl -i -X POST http://localhost:8080/__admin/recordings/snapshot -H 'Content-Type: application/json' --data-binary @testdata/recording_snapshot.json`
+- `curl -i -X POST http://localhost:8080/__admin/recordings/start -H 'Content-Type: application/json' -d '{"targetBaseUrl":"https://time.now"}'`
+- `curl -i http://localhost:8080/developer/api/ip`
+- `curl -i -X POST http://localhost:8080/__admin/recordings/stop`
+- `curl -i http://localhost:8080/developer/api/ip`
+
 Проверки и результаты:
+- `GOCACHE=/Users/vseiinstrumentyru/GolandProjects/vimock/.gocache go test ./...` - passed.
+- `GOCACHE=/Users/vseiinstrumentyru/GolandProjects/vimock/.gocache go test -race ./internal/recording ./internal/server ./internal/mapping` - passed.
+- `GOCACHE=/Users/vseiinstrumentyru/GolandProjects/vimock/.gocache go test -coverprofile=coverage.out ./...` - passed, total coverage 69.9%.
+
 Покрытые требования:
+- REC-001: serve events хранятся in-memory.
+- REC-002, REC-003: `recordings/start` и `targetBaseUrl` реализованы.
+- REC-004: active recording проксирует unmatched HTTP requests.
+- REC-005, REC-006: `recordings/stop` создает и активирует recorded mappings.
+- REC-007: `recordings/snapshot` реализован.
+- REC-008, REC-009: `captureHeaders`, `requestBodyPattern`, `persist` поддержаны в рабочем объеме; остальные spec fields принимаются как foundation.
+- REC-010: binary response bodies записываются через `base64Body`.
+- REC-011: generated mappings compatible с текущим Admin/runtime parser.
+
 Known gaps:
+- `outputFormat`, `extractBodyCriteria`, `repeatsAsScenarios` принимаются в spec, но не имеют полной WireMock parity.
+- Persistent filesystem output не реализован; все mappings и events in-memory.
+- Active recording проксирует только unmatched HTTP requests.
+- gRPC upstream proxy/recording не реализован.
+- Matched unary gRPC serve events попадают в snapshot foundation как JSON events, но full gRPC recording остается отдельной задачей.
+
 Риски/решения:
+- Recording не создает временный proxy mapping, а встроен в runtime no-match path; это проще и не мешает существующим mappings.
+- Snapshot активирует generated mappings сразу, как stop, чтобы результат можно было проверить без перезапуска.
+- `base64Body` добавлен в parser, чтобы binary recorded mappings можно было сразу проигрывать.
+- Общий coverage снизился до 69.9%; 90% остается финальным quality gate.
 ```
 
 ## Шаг 15. HTTPS, HTTP/2, Docker/CI/Kubernetes readiness и performance baseline

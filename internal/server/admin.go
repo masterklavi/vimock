@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -8,6 +9,7 @@ import (
 
 	"vimock/internal/grpcdesc"
 	"vimock/internal/mapping"
+	"vimock/internal/recording"
 	"vimock/internal/scenario"
 )
 
@@ -17,6 +19,7 @@ type adminAPI struct {
 	mappings    *mapping.Store
 	scenarios   *scenario.Store
 	descriptors *grpcdesc.Store
+	recorder    *recording.Store
 }
 
 type listMappingsResponse struct {
@@ -128,6 +131,58 @@ func (a adminAPI) resetScenarios(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{})
 }
 
+func (a adminAPI) startRecording(w http.ResponseWriter, r *http.Request) {
+	spec, err := readRecordingSpec(w, r)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := a.recorder.Start(spec); err != nil {
+		writeAPIError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":        "Recording",
+		"targetBaseUrl": spec.TargetBaseURL,
+	})
+}
+
+func (a adminAPI) stopRecording(w http.ResponseWriter, _ *http.Request) {
+	snapshot, err := a.recorder.Stop()
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	a.activateRecordedMappings(snapshot.Mappings)
+	writeJSON(w, http.StatusOK, snapshot)
+}
+
+func (a adminAPI) snapshotRecording(w http.ResponseWriter, r *http.Request) {
+	spec, err := readOptionalRecordingSpec(w, r)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	snapshot, err := a.recorder.Snapshot(spec)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	a.activateRecordedMappings(snapshot.Mappings)
+	writeJSON(w, http.StatusOK, snapshot)
+}
+
+func (a adminAPI) activateRecordedMappings(mappings []mapping.Mapping) {
+	for _, stub := range mappings {
+		created := a.mappings.Create(stub)
+		a.scenarios.MappingCreated(created)
+	}
+}
+
 type grpcDescriptorsResponse struct {
 	Descriptors []grpcdesc.FileInfo `json:"descriptors"`
 	Registry    grpcdesc.Registry   `json:"registry"`
@@ -213,6 +268,52 @@ func readMapping(w http.ResponseWriter, r *http.Request, id string) (mapping.Map
 	}
 
 	return mapping.ParseJSONWithID(body, id)
+}
+
+func readRecordingSpec(w http.ResponseWriter, r *http.Request) (recording.Spec, error) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxMappingBodySize)
+	defer r.Body.Close()
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			return recording.Spec{}, fmt.Errorf("recording body exceeds %d bytes", maxMappingBodySize)
+		}
+		return recording.Spec{}, fmt.Errorf("read recording body: %w", err)
+	}
+	if len(body) == 0 {
+		return recording.Spec{}, fmt.Errorf("recording body is required")
+	}
+
+	var spec recording.Spec
+	if err := json.Unmarshal(body, &spec); err != nil {
+		return recording.Spec{}, fmt.Errorf("recording body must be a valid JSON object: %w", err)
+	}
+	return spec, nil
+}
+
+func readOptionalRecordingSpec(w http.ResponseWriter, r *http.Request) (recording.Spec, error) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxMappingBodySize)
+	defer r.Body.Close()
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			return recording.Spec{}, fmt.Errorf("recording body exceeds %d bytes", maxMappingBodySize)
+		}
+		return recording.Spec{}, fmt.Errorf("read recording body: %w", err)
+	}
+	if len(body) == 0 {
+		return recording.Spec{}, nil
+	}
+
+	var spec recording.Spec
+	if err := json.Unmarshal(body, &spec); err != nil {
+		return recording.Spec{}, fmt.Errorf("recording body must be a valid JSON object: %w", err)
+	}
+	return spec, nil
 }
 
 func writeAPIError(w http.ResponseWriter, status int, title string) {

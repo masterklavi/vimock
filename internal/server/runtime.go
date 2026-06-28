@@ -13,6 +13,7 @@ import (
 	"vimock/internal/mapping"
 	"vimock/internal/matcher"
 	"vimock/internal/proxy"
+	"vimock/internal/recording"
 	"vimock/internal/response"
 	"vimock/internal/scenario"
 )
@@ -26,6 +27,7 @@ type runtimeAPI struct {
 	forwarder   proxy.Forwarder
 	scenarios   scenario.StateStore
 	sleeper     delay.Sleeper
+	recorder    *recording.Store
 }
 
 func (a runtimeAPI) serveHTTP(w http.ResponseWriter, r *http.Request) {
@@ -47,6 +49,9 @@ func (a runtimeAPI) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	bodyContext := matcher.NewBodyContext(body)
 	stub, ok := a.findMatch(r, bodyContext)
 	if !ok {
+		if a.tryServeRecordingProxy(w, r, body) {
+			return
+		}
 		a.writeNoMatch(w, r)
 		return
 	}
@@ -62,6 +67,7 @@ func (a runtimeAPI) serveHTTP(w http.ResponseWriter, r *http.Request) {
 			writeProxyError(w, err)
 			return
 		}
+		a.recordServeEvent(r, body, proxied.Status, proxied.Headers, proxied.Body, recording.SourceProxy)
 		writeProxyResponse(w, r, proxied, responseDefinition, a.sleep)
 		return
 	}
@@ -72,7 +78,54 @@ func (a runtimeAPI) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	a.recordServeEvent(r, body, rendered.Status, rendered.Headers, rendered.Body, recording.SourceStub)
 	writeStubResponse(w, r, rendered, responseDefinition, a.sleep)
+}
+
+func (a runtimeAPI) tryServeRecordingProxy(w http.ResponseWriter, r *http.Request, body []byte) bool {
+	if a.recorder == nil {
+		return false
+	}
+	spec, ok := a.recorder.ActiveSpec()
+	if !ok {
+		return false
+	}
+
+	proxied, err := a.forwarder.Forward(r.Context(), r, body, mapping.ResponseDefinition{
+		ProxyBaseURL: spec.TargetBaseURL,
+	})
+	if err != nil {
+		writeProxyError(w, err)
+		return true
+	}
+
+	event := newServeEvent(r, body, proxied.Status, proxied.Headers, proxied.Body, recording.SourceRecording)
+	a.recorder.AddRecordingEvent(event)
+	writeProxyResponse(w, r, proxied, mapping.ResponseDefinition{}, a.sleep)
+	return true
+}
+
+func (a runtimeAPI) recordServeEvent(r *http.Request, requestBody []byte, responseStatus int, responseHeaders http.Header, responseBody []byte, source string) {
+	if a.recorder == nil {
+		return
+	}
+	a.recorder.AddServeEvent(newServeEvent(r, requestBody, responseStatus, responseHeaders, responseBody, source))
+}
+
+func newServeEvent(r *http.Request, requestBody []byte, responseStatus int, responseHeaders http.Header, responseBody []byte, source string) recording.ServeEvent {
+	return recording.ServeEvent{
+		Method:          r.Method,
+		URL:             r.URL.RequestURI(),
+		Path:            r.URL.Path,
+		RawQuery:        r.URL.RawQuery,
+		RequestHeaders:  r.Header,
+		RequestBody:     requestBody,
+		ResponseStatus:  responseStatus,
+		ResponseHeaders: responseHeaders,
+		ResponseBody:    responseBody,
+		Source:          source,
+		Protocol:        recording.ProtocolHTTP,
+	}
 }
 
 func (a runtimeAPI) findMatch(r *http.Request, body *matcher.BodyContext) (mapping.Mapping, bool) {

@@ -3,6 +3,7 @@ package mapping
 import (
 	"bytes"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -482,10 +483,10 @@ func (p RequestPattern) matchesMethod(method string) bool {
 	switch p.Method {
 	case "ANY":
 		return true
-	case "GET", "POST":
-		return strings.EqualFold(p.Method, method)
-	default:
+	case "":
 		return false
+	default:
+		return strings.EqualFold(p.Method, method)
 	}
 }
 
@@ -594,6 +595,17 @@ func parseResponseBody(object map[string]json.RawMessage) ([]byte, bool, error) 
 	if raw, ok := object["jsonBody"]; ok {
 		return cloneBytes(raw), true, nil
 	}
+	if raw, ok := object["base64Body"]; ok {
+		encoded, err := stringRawField(raw, "response.base64Body")
+		if err != nil {
+			return nil, false, err
+		}
+		body, err := base64.StdEncoding.DecodeString(encoded)
+		if err != nil {
+			return nil, false, fmt.Errorf("response.base64Body must be valid base64: %w", err)
+		}
+		return body, false, nil
+	}
 
 	raw, ok := object["body"]
 	if !ok || len(raw) == 0 || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
@@ -605,6 +617,14 @@ func parseResponseBody(object map[string]json.RawMessage) ([]byte, bool, error) 
 		return nil, false, fmt.Errorf("response.body must be a string")
 	}
 	return []byte(body), false, nil
+}
+
+func stringRawField(raw json.RawMessage, field string) (string, error) {
+	var value string
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return "", fmt.Errorf("%s must be a string", field)
+	}
+	return value, nil
 }
 
 func parseStringArrayField(raw map[string]json.RawMessage, field string) ([]string, error) {

@@ -1,0 +1,8 @@
+{
+  "targetBaseUrl": "http://127.0.0.1:9000",
+  "captureHeaders": {
+    "X-Request-Id": {}
+  },
+  "requestBodyPattern": "equalToJson",
+  "persist": true
+}
