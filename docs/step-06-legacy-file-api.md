@@ -3,9 +3,10 @@
 ## What Is Available
 
 - `POST /api/login`.
-- `POST /api/tus/{file}?override=true`.
-- `PATCH /api/tus/{file}?override=true`.
+- `POST /api/tus/{file...}?override=true`.
+- `PATCH /api/tus/{file...}?override=true`.
 - `Upload-Metadata` filename parsing.
+- Nested filebrowser-style paths are accepted, for example `/api/tus/grpc/mc_product.dsc`; VIMock stores the basename.
 - `X-Auth` token check for upload requests.
 - Uploaded bytes are stored in the shared in-memory file store.
 - Uploaded files can be returned through `response.bodyFileName`.

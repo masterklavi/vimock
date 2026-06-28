@@ -104,8 +104,9 @@ Tag pushes create GitHub Release assets for Linux and macOS on `amd64` and `arm6
 - Stateful scenarios via `scenarioName`, `requiredScenarioState`, `newScenarioState`.
 - Scenario reset endpoint: `POST /__admin/scenarios/reset`.
 - Legacy file auth endpoint: `POST /api/login`.
-- Legacy file upload create endpoint: `POST /api/tus/{file}?override=true`.
-- Legacy file upload bytes endpoint: `PATCH /api/tus/{file}?override=true`.
+- Legacy file upload create endpoint: `POST /api/tus/{file...}?override=true`.
+- Legacy file upload bytes endpoint: `PATCH /api/tus/{file...}?override=true`.
+- Legacy file upload accepts nested filebrowser-style paths such as `/api/tus/grpc/mc_product.dsc` and stores the basename.
 - `Upload-Metadata` filename parsing for current autotest file upload workflow.
 - gRPC descriptor Admin API: `GET /__admin/ext/grpc/descriptors`.
 - gRPC descriptor Admin API: `PUT /__admin/ext/grpc/descriptors/{fileName}`.

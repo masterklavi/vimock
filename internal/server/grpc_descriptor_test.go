@@ -127,11 +127,12 @@ func TestLegacyDescriptorUploadFeedsGRPCRegistry(t *testing.T) {
 
 	token := legacyFileAuthToken
 	fileName := "mc_product.dsc"
+	uploadPath := "grpc/" + fileName
 	createUpload := requestWithHeadersAndReader(
 		t,
 		handler,
 		http.MethodPost,
-		"/api/tus/"+fileName+"?override=true",
+		"/api/tus/"+uploadPath+"?override=true",
 		map[string]string{
 			"Tus-Resumable":   "1.0.0",
 			"Upload-Length":   "1",
@@ -148,7 +149,7 @@ func TestLegacyDescriptorUploadFeedsGRPCRegistry(t *testing.T) {
 		t,
 		handler,
 		http.MethodPatch,
-		"/api/tus/"+fileName+"?override=true",
+		"/api/tus/"+uploadPath+"?override=true",
 		map[string]string{
 			"Content-Type":  "application/offset+octet-stream",
 			"Tus-Resumable": "1.0.0",

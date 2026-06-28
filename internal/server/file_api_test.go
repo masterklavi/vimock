@@ -31,12 +31,13 @@ func TestLegacyFileUploadWorkflow(t *testing.T) {
 	}
 
 	fileName := "mc_product.dsc"
+	uploadPath := "grpc/" + fileName
 	payload := []byte{0x0a, 0x12, 0x76, 0x69, 0x6d, 0x6f, 0x63, 0x6b}
 	createUpload := requestWithHeadersAndReader(
 		t,
 		handler,
 		http.MethodPost,
-		"/api/tus/"+fileName+"?override=true",
+		"/api/tus/"+uploadPath+"?override=true",
 		map[string]string{
 			"Tus-Resumable":   "1.0.0",
 			"Upload-Length":   "8",
@@ -56,7 +57,7 @@ func TestLegacyFileUploadWorkflow(t *testing.T) {
 		t,
 		handler,
 		http.MethodPatch,
-		"/api/tus/"+fileName+"?override=true",
+		"/api/tus/"+uploadPath+"?override=true",
 		map[string]string{
 			"Content-Type":    "application/offset+octet-stream",
 			"Tus-Resumable":   "1.0.0",
@@ -192,13 +193,25 @@ func TestLegacyFileUploadValidationErrors(t *testing.T) {
 			wantStatus: http.StatusBadRequest,
 		},
 		{
-			name:   "create rejects unsafe filename metadata",
+			name:   "create accepts nested filename metadata by basename",
 			method: http.MethodPost,
 			path:   "/api/tus/payload.bin?override=true",
 			headers: map[string]string{
 				"Tus-Resumable":   "1.0.0",
 				"Upload-Length":   "1",
 				"Upload-Metadata": "filename " + hex.EncodeToString([]byte("dir/payload.bin")),
+				"X-Auth":          token,
+			},
+			wantStatus: http.StatusCreated,
+		},
+		{
+			name:   "create rejects unsafe backslash filename metadata",
+			method: http.MethodPost,
+			path:   "/api/tus/payload.bin?override=true",
+			headers: map[string]string{
+				"Tus-Resumable":   "1.0.0",
+				"Upload-Length":   "1",
+				"Upload-Metadata": "filename " + hex.EncodeToString([]byte(`dir\payload.bin`)),
 				"X-Auth":          token,
 			},
 			wantStatus: http.StatusBadRequest,
@@ -258,6 +271,24 @@ func TestValidateUploadFileName(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			if _, err := validateUploadFileName(name); err == nil {
 				t.Fatalf("validateUploadFileName(%q) error = nil, want error", name)
+			}
+		})
+	}
+}
+
+func TestUploadPathFileNameUsesBasenameForLegacySubdirectories(t *testing.T) {
+	valid, err := uploadPathFileName("grpc/mc_product.dsc")
+	if err != nil {
+		t.Fatalf("uploadPathFileName() error = %v", err)
+	}
+	if valid != "mc_product.dsc" {
+		t.Fatalf("valid filename = %q, want mc_product.dsc", valid)
+	}
+
+	for _, name := range []string{"", "/", "grpc/", `grpc\mc_product.dsc`, "grpc/bad\x00name"} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := uploadPathFileName(name); err == nil {
+				t.Fatalf("uploadPathFileName(%q) error = nil, want error", name)
 			}
 		})
 	}

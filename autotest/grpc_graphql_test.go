@@ -27,6 +27,7 @@ const (
 func TestBlackBoxGRPCDescriptorUploadAndUnaryRuntime(t *testing.T) {
 	s := requireTarget(t)
 	descriptorSet := readTestdata(t, "mc_product.dsc")
+	uploadLegacyFileAtPath(t, s, "grpc/mc_product.dsc", "mc_product.dsc", descriptorSet)
 
 	protoName := strings.ReplaceAll("autotest_"+uniqueName(t)+".proto", "-", "_")
 	protoResp, protoBody := s.request(t, http.MethodPut, "/__admin/ext/grpc/descriptors/"+url.PathEscape(protoName), []byte(`syntax = "proto3"; package autotest; message Ping { string id = 1; }`), map[string]string{"Content-Type": "text/plain"})

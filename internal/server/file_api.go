@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"path"
 	"strconv"
 	"strings"
 
@@ -60,7 +61,7 @@ func (a fileAPI) patchUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fileName, err := validateUploadFileName(r.PathValue("file"))
+	fileName, err := uploadPathFileName(r.PathValue("file"))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -136,10 +137,10 @@ func uploadFileName(r *http.Request) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		return validateUploadFileName(name)
+		return uploadPathFileName(name)
 	}
 
-	return validateUploadFileName(r.PathValue("file"))
+	return uploadPathFileName(r.PathValue("file"))
 }
 
 func uploadMetadataFileName(metadata string) (string, bool, error) {
@@ -169,4 +170,14 @@ func validateUploadFileName(name string) (string, error) {
 	}
 
 	return name, nil
+}
+
+func uploadPathFileName(rawPath string) (string, error) {
+	rawPath = strings.TrimSpace(rawPath)
+	if rawPath == "" || strings.HasSuffix(rawPath, "/") {
+		return "", fmt.Errorf("file name is required")
+	}
+
+	fileName := path.Base(strings.Trim(rawPath, "/"))
+	return validateUploadFileName(fileName)
 }

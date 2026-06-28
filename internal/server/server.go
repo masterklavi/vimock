@@ -96,8 +96,8 @@ func NewHandlerWithStoresDescriptorsRecorderForwarder(logger *slog.Logger, mappi
 	mux.HandleFunc("DELETE /__admin/ext/grpc/descriptors/{fileName}", admin.deleteGRPCDescriptor)
 	mux.HandleFunc("POST /__admin/ext/grpc/reset", admin.resetGRPC)
 	mux.HandleFunc("POST /api/login", filesAPI.login)
-	mux.HandleFunc("POST /api/tus/{file}", filesAPI.createUpload)
-	mux.HandleFunc("PATCH /api/tus/{file}", filesAPI.patchUpload)
+	mux.HandleFunc("POST /api/tus/{file...}", filesAPI.createUpload)
+	mux.HandleFunc("PATCH /api/tus/{file...}", filesAPI.patchUpload)
 	mux.HandleFunc("/", runtime.serveHTTP)
 
 	return loggingMiddleware(logger, mux)

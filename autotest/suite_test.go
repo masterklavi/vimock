@@ -323,12 +323,17 @@ func uniqueName(t *testing.T) string {
 
 func uploadLegacyFile(t *testing.T, s *target, fileName string, data []byte) {
 	t.Helper()
+	uploadLegacyFileAtPath(t, s, fileName, fileName, data)
+}
+
+func uploadLegacyFileAtPath(t *testing.T, s *target, uploadPath, fileName string, data []byte) {
+	t.Helper()
 	loginResp, loginBody := s.request(t, http.MethodPost, "/api/login", nil, nil)
 	expectStatus(t, loginResp, loginBody, http.StatusOK)
 	token := strings.TrimSpace(string(loginBody))
 	metadata := "filename " + hex.EncodeToString([]byte(fileName))
 
-	createResp, createBody := s.request(t, http.MethodPost, "/api/tus/"+url.PathEscape(fileName)+"?override=true", nil, map[string]string{
+	createResp, createBody := s.request(t, http.MethodPost, "/api/tus/"+escapeUploadPath(uploadPath)+"?override=true", nil, map[string]string{
 		"Tus-Resumable":   "1.0.0",
 		"Upload-Length":   strconv.Itoa(len(data)),
 		"Upload-Metadata": metadata,
@@ -336,13 +341,21 @@ func uploadLegacyFile(t *testing.T, s *target, fileName string, data []byte) {
 	})
 	expectStatus(t, createResp, createBody, http.StatusCreated)
 
-	patchResp, patchBody := s.request(t, http.MethodPatch, "/api/tus/"+url.PathEscape(fileName)+"?override=true", data, map[string]string{
+	patchResp, patchBody := s.request(t, http.MethodPatch, "/api/tus/"+escapeUploadPath(uploadPath)+"?override=true", data, map[string]string{
 		"Content-Type":  "application/offset+octet-stream",
 		"Tus-Resumable": "1.0.0",
 		"Upload-Offset": "0",
 		"X-Auth":        token,
 	})
 	expectStatus(t, patchResp, patchBody, http.StatusNoContent)
+}
+
+func escapeUploadPath(uploadPath string) string {
+	parts := strings.Split(uploadPath, "/")
+	for index, part := range parts {
+		parts[index] = url.PathEscape(part)
+	}
+	return strings.Join(parts, "/")
 }
 
 func newReachableUpstream(t *testing.T, handler http.Handler) (*httptest.Server, string) {
