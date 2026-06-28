@@ -135,12 +135,13 @@ func (a runtimeAPI) findMatch(r *http.Request, body *matcher.BodyContext) (mappi
 	headers := r.Header
 
 	candidates := make([]mapping.Mapping, 0)
-	for _, stub := range a.mappings.List() {
+	a.mappings.Range(func(stub mapping.Mapping) bool {
 		if !stub.Request().Matches(r.Method, requestURI, path, query, headers, body) {
-			continue
+			return true
 		}
 		candidates = append(candidates, stub)
-	}
+		return true
+	})
 
 	if a.scenarios == nil {
 		return selectBestStub(candidates)

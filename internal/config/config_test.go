@@ -14,15 +14,20 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.Port != defaultPort {
 		t.Fatalf("port = %d, want %d", cfg.Port, defaultPort)
 	}
+	if cfg.HTTPSEnabled() {
+		t.Fatal("HTTPS should be disabled by default")
+	}
 }
 
 func TestLoadEnvAndFlagOverride(t *testing.T) {
 	env := map[string]string{
-		"VIMOCK_HOST": "127.0.0.1",
-		"VIMOCK_PORT": "9090",
+		"VIMOCK_HOST":            "127.0.0.1",
+		"VIMOCK_PORT":            "9090",
+		"VIMOCK_HTTPS_PORT":      "9443",
+		"VIMOCK_TLS_SELF_SIGNED": "true",
 	}
 
-	cfg, err := load([]string{"--port", "9191"}, func(key string) string {
+	cfg, err := load([]string{"--port", "9191", "--https-port", "8443"}, func(key string) string {
 		return env[key]
 	}, nil)
 	if err != nil {
@@ -34,6 +39,12 @@ func TestLoadEnvAndFlagOverride(t *testing.T) {
 	}
 	if cfg.Port != 9191 {
 		t.Fatalf("port = %d, want flag override", cfg.Port)
+	}
+	if cfg.HTTPSPort != 8443 {
+		t.Fatalf("https port = %d, want flag override", cfg.HTTPSPort)
+	}
+	if !cfg.TLSSelfSigned {
+		t.Fatal("self-signed TLS flag should be loaded from env")
 	}
 }
 
@@ -51,6 +62,44 @@ func TestLoadVersionFlag(t *testing.T) {
 	}
 	if !cfg.Version {
 		t.Fatalf("version = false, want true")
+	}
+}
+
+func TestLoadHTTPSWithCertFiles(t *testing.T) {
+	cfg, err := load([]string{
+		"--https-port", "8443",
+		"--tls-cert-file", "cert.pem",
+		"--tls-key-file", "key.pem",
+	}, func(string) string { return "" }, nil)
+	if err != nil {
+		t.Fatalf("load https cert files: %v", err)
+	}
+	if !cfg.HTTPSEnabled() {
+		t.Fatal("HTTPS should be enabled")
+	}
+	if cfg.HTTPSAddr() != "0.0.0.0:8443" {
+		t.Fatalf("https addr = %q, want 0.0.0.0:8443", cfg.HTTPSAddr())
+	}
+}
+
+func TestLoadRejectsHTTPSWithoutTLSMaterial(t *testing.T) {
+	_, err := load([]string{"--https-port", "8443"}, func(string) string { return "" }, nil)
+	if err == nil {
+		t.Fatal("expected HTTPS without TLS material error")
+	}
+}
+
+func TestLoadRejectsPartialCertFiles(t *testing.T) {
+	_, err := load([]string{"--https-port", "8443", "--tls-cert-file", "cert.pem"}, func(string) string { return "" }, nil)
+	if err == nil {
+		t.Fatal("expected partial TLS file error")
+	}
+}
+
+func TestLoadRejectsTLSOptionsWithoutHTTPSPort(t *testing.T) {
+	_, err := load([]string{"--tls-self-signed"}, func(string) string { return "" }, nil)
+	if err == nil {
+		t.Fatal("expected TLS option without HTTPS port error")
 	}
 }
 

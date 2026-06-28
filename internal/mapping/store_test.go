@@ -86,6 +86,31 @@ func TestStoreConcurrentAccess(t *testing.T) {
 	}
 }
 
+func TestStoreRangeIteratesSnapshotWithoutExposingListCopy(t *testing.T) {
+	store := NewStore()
+	first := store.Create(mustParseMapping(t, "first"))
+	second := store.Create(mustParseMapping(t, "second"))
+
+	var ids []string
+	store.Range(func(stub Mapping) bool {
+		ids = append(ids, stub.ID())
+		return true
+	})
+
+	if len(ids) != 2 || ids[0] != first.ID() || ids[1] != second.ID() {
+		t.Fatalf("range ids = %#v, want [%s %s]", ids, first.ID(), second.ID())
+	}
+
+	var limited []string
+	store.Range(func(stub Mapping) bool {
+		limited = append(limited, stub.ID())
+		return false
+	})
+	if len(limited) != 1 || limited[0] != first.ID() {
+		t.Fatalf("limited range ids = %#v, want first id only", limited)
+	}
+}
+
 func mustParseMapping(t *testing.T, name string) Mapping {
 	t.Helper()
 

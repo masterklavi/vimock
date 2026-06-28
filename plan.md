@@ -1348,14 +1348,81 @@ docker build -t vimock:dev .
 Отчет ИИ по шагу 15:
 
 ```text
-Статус: TODO
+Статус: DONE
 Сделано:
+- Добавлена process-level HTTPS конфигурация: `--https-port`, `--tls-cert-file`, `--tls-key-file`, `--tls-self-signed` и env аналоги `VIMOCK_HTTPS_PORT`, `VIMOCK_TLS_CERT_FILE`, `VIMOCK_TLS_KEY_FILE`, `VIMOCK_TLS_SELF_SIGNED`.
+- Добавлена strict validation: TLS options нельзя задавать без HTTPS port, HTTPS нельзя включить без пары cert/key или self-signed режима.
+- Добавлен пакет `internal/tlsconfig` для TLS server config.
+- Добавлен file-based TLS path через `tls.LoadX509KeyPair`.
+- Добавлен in-memory self-signed certificate path для локального/CI smoke запуска.
+- TLS config выставляет `MinVersion=TLS1.2` и ALPN `h2`, `http/1.1`.
+- `cmd/vimock` теперь запускает HTTP listener всегда и дополнительный HTTPS listener при включенном `--https-port`.
+- HTTP и HTTPS listeners используют общий handler и общий graceful shutdown.
+- Если один listener падает на старте/рантайме, второй корректно останавливается.
+- Docker runtime image уточнен: Alpine 3.22, CA certificates, non-root пользователь `vimock`, ports `8080`/`8443`, healthcheck через `GET /__admin/health`.
+- `Dockerfile` теперь копирует `go.sum` для воспроизводимого Docker build.
+- Добавлена Kubernetes-ready probes документация для readiness/liveness.
+- Runtime matching больше не копирует весь slice mappings на каждый пользовательский запрос: добавлен `mapping.Store.Range()` по immutable snapshot.
+- Добавлен smoke test большого набора mappings на 5000 stubs.
+- Добавлены benchmarks для полного HTTP matching/response pipeline и response-template JSONPath pipeline.
+- README обновлен по HTTPS, Docker hardening и docs ссылкам.
+- Добавлена документация `docs/step-15-https-docker-kubernetes-performance.md`.
+
 Измененные файлы:
+- `Dockerfile`
+- `README.md`
+- `cmd/vimock/main.go`
+- `docs/README.md`
+- `docs/step-15-https-docker-kubernetes-performance.md`
+- `internal/config/config.go`
+- `internal/config/config_test.go`
+- `internal/mapping/store.go`
+- `internal/mapping/store_test.go`
+- `internal/response/render_benchmark_test.go`
+- `internal/server/https_test.go`
+- `internal/server/performance_test.go`
+- `internal/server/runtime.go`
+- `internal/tlsconfig/tlsconfig.go`
+- `internal/tlsconfig/tlsconfig_test.go`
+- `plan.md`
+
 Как запускать:
+- `go run ./cmd/vimock`
+- `go run ./cmd/vimock --https-port 8443 --tls-self-signed`
+- `go run ./cmd/vimock --https-port 8443 --tls-cert-file ./cert.pem --tls-key-file ./key.pem`
+- `curl -i http://localhost:8080/__admin/health`
+- `curl -k --http2 -i https://localhost:8443/__admin/health`
+- `docker build -t vimock:dev .`
+- `docker run --rm -p 8080:8080 vimock:dev`
+- `docker run --rm -p 8080:8080 -p 8443:8443 vimock:dev --https-port 8443 --tls-self-signed`
+
 Проверки и результаты:
+- `GOCACHE=/Users/vseiinstrumentyru/GolandProjects/vimock/.gocache go test ./...` - успешно.
+- `GOCACHE=/Users/vseiinstrumentyru/GolandProjects/vimock/.gocache go test -race ./internal/mapping ./internal/server ./internal/tlsconfig ./internal/config` - успешно.
+- `GOCACHE=/Users/vseiinstrumentyru/GolandProjects/vimock/.gocache go test -run '^$' -bench=. -benchmem ./internal/server ./internal/response` - успешно.
+- `BenchmarkRuntimeMatchAndRespondThousandMappings-8` - 53982 ns/op, 31533 B/op, 70 allocs/op, 1000 mappings, Apple M1 Pro.
+- `BenchmarkRenderTemplateJSONPath-8` - 3401 ns/op, 2530 B/op, 44 allocs/op, Apple M1 Pro.
+- `docker build -t vimock:dev .` - успешно после elevated доступа к Docker/OrbStack daemon.
+- `GOCACHE=/Users/vseiinstrumentyru/GolandProjects/vimock/.gocache go run ./cmd/vimock --version` - `vimock dev`.
+- Real smoke: `go run ./cmd/vimock --host 127.0.0.1 --port 18080 --https-port 18443 --tls-self-signed` - сервис стартует.
+- Real smoke: `curl -sS http://127.0.0.1:18080/__admin/health` - HTTP 200, `{"status":"healthy","message":"VIMock is ok","service":"vimock"}`.
+- Real smoke: `curl -skS https://127.0.0.1:18443/__admin/health` - HTTPS 200, `{"status":"healthy","message":"VIMock is ok","service":"vimock"}`.
+- Real smoke: `curl -skS --http2 -o /dev/null -w 'https_http_version=%{http_version}\n' https://127.0.0.1:18443/__admin/health` - `https_http_version=2`.
+
 Покрытые требования:
+- PROTO-002, CON-004, CON-005, CON-006, NFR-001, NFR-002, NFR-005, NFR-006, TEST-006.
+
 Known gaps:
+- Kubernetes manifests не добавлены, так как шаг явно ограничен документацией probes.
+- Self-signed certificate path предназначен для local/CI smoke, для production нужно использовать cert/key files из Secret/volume.
+- Docker healthcheck проверяет HTTP listener на `8080`; если в будущем появится режим отключения HTTP, healthcheck надо будет параметризовать.
+- Требование 90% unit coverage остается quality gate шага 16.
+
 Риски/решения:
+- Используем Alpine runtime, потому что ранее принято решение вернуться к Alpine; CA certificates добавлены явно, чтобы HTTPS proxy upstream работал из контейнера.
+- `mapping.Store.List()` оставлен безопасным copy API для Admin/read paths, а hot path matching переведен на `Store.Range()` без копирования snapshot slice.
+- Unit test для реального TLS listener не использует bind из-за sandbox restrictions; HTTP/2 request handling проверяется без listener, TLS ALPN `h2` проверяется в `internal/tlsconfig`, реальный HTTPS+HTTP/2 smoke выполнен отдельной командой через curl.
+- Docker build требует доступа к Docker daemon; в sandbox он доступен только через elevated execution.
 ```
 
 ## Шаг 16. Финальная приемка MVP и quality gate

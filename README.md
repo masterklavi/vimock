@@ -20,6 +20,17 @@ Configuration:
 
 - `--host` or `VIMOCK_HOST`
 - `--port` or `VIMOCK_PORT`
+- `--https-port` or `VIMOCK_HTTPS_PORT`
+- `--tls-cert-file` or `VIMOCK_TLS_CERT_FILE`
+- `--tls-key-file` or `VIMOCK_TLS_KEY_FILE`
+- `--tls-self-signed` or `VIMOCK_TLS_SELF_SIGNED`
+
+HTTPS with an in-memory self-signed certificate:
+
+```bash
+go run ./cmd/vimock --https-port 8443 --tls-self-signed
+curl -k --http2 https://localhost:8443/__admin/health
+```
 
 Health checks:
 
@@ -33,6 +44,7 @@ Docker:
 ```bash
 docker build -t vimock:dev .
 docker run --rm -p 8080:8080 vimock:dev
+docker run --rm -p 8080:8080 -p 8443:8443 vimock:dev --https-port 8443 --tls-self-signed
 ```
 
 Release:
@@ -48,11 +60,13 @@ Tag pushes create GitHub Release assets for Linux and macOS on `amd64` and `arm6
 
 - Service bootstrap with graceful shutdown.
 - HTTP server with JSON stdout logging.
-- CLI/env configuration: `--host`, `--port`, `VIMOCK_HOST`, `VIMOCK_PORT`.
+- CLI/env configuration: `--host`, `--port`, `--https-port`, `--tls-cert-file`, `--tls-key-file`, `--tls-self-signed`, `VIMOCK_HOST`, `VIMOCK_PORT`, `VIMOCK_HTTPS_PORT`, `VIMOCK_TLS_CERT_FILE`, `VIMOCK_TLS_KEY_FILE`, `VIMOCK_TLS_SELF_SIGNED`.
 - Health endpoint: `GET /__admin/health`.
 - Readiness endpoint: `GET /__admin/ready`.
 - Docker image build via `docker build -t vimock:dev .`.
-- HTTP/1.1, HTTP/2 and unencrypted HTTP/2 server transport base.
+- Docker runtime image uses Alpine, CA certificates, non-root user and a container healthcheck.
+- HTTP/1.1, HTTP/2, unencrypted HTTP/2 server transport base and HTTP/2 over TLS.
+- HTTPS listener with file-based certificates or generated in-memory self-signed certificates.
 - In-memory WireMock mapping storage.
 - Admin API: `GET /__admin/mappings`.
 - Admin API: `GET /__admin/mappings/{id}`.
@@ -139,10 +153,11 @@ Tag pushes create GitHub Release assets for Linux and macOS on `amd64` and `arm6
 - [Step 12: gRPC stubbing runtime](docs/step-12-grpc-stubbing-runtime.md)
 - [Step 13: GraphQL semantic matcher](docs/step-13-graphql-semantic-matcher.md)
 - [Step 14: Recording and snapshotting](docs/step-14-recording-and-snapshotting.md)
+- [Step 15: HTTPS, Docker and performance baseline](docs/step-15-https-docker-kubernetes-performance.md)
 
 ## Scope guardrails
 
-The current implementation is incremental. It includes the service bootstrap, port configuration, stdout logging, health/readiness endpoints, Admin API CRUD for mappings, basic HTTP stubbing, request matching needed by current mocks, targeted response templating, in-memory body files, proxy fallback, recording/snapshotting, delays, stateful scenarios, runtime-generated mapping lifecycle checks, the legacy file upload workflow used by current autotests, the gRPC descriptor registry foundation, unary gRPC stubbing runtime, and GraphQL semantic matching.
+The current implementation is incremental. It includes the service bootstrap, HTTP/HTTPS port configuration, stdout logging, health/readiness endpoints, Admin API CRUD for mappings, basic HTTP stubbing, request matching needed by current mocks, targeted response templating, in-memory body files, proxy fallback, recording/snapshotting, delays, stateful scenarios, runtime-generated mapping lifecycle checks, the legacy file upload workflow used by current autotests, the gRPC descriptor registry foundation, unary gRPC stubbing runtime, GraphQL semantic matching, Docker hardening and performance benchmarks.
 
 Advanced request matching beyond current fixtures, full WireMock response templating, full TUS support, advanced recording modes, advanced gRPC features, and GraphQL federation-specific behavior are intentionally added in separate increments described in `plan.md`.
 

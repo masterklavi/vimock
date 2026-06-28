@@ -38,6 +38,15 @@ func (s *Store) List() []Mapping {
 	return mappings
 }
 
+func (s *Store) Range(yield func(Mapping) bool) {
+	current := s.loadSnapshot()
+	for _, mapping := range current.mappings {
+		if !yield(mapping) {
+			return
+		}
+	}
+}
+
 func (s *Store) Get(id string) (Mapping, bool) {
 	current := s.loadSnapshot()
 	mapping, ok := current.byID[id]
