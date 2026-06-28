@@ -1,0 +1,11 @@
+.git
+.idea
+bin
+coverage.out
+current-autotest.md
+current-mocks.md
+examples
+autotests-example
+wiremock
+wiremock-grpc-extension
+wiremock-graphql-extension
