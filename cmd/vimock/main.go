@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -24,14 +25,36 @@ func main() {
 		Level: slog.LevelInfo,
 	}))
 
-	cfg, err := config.Load(os.Args[1:])
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	os.Exit(run(ctx, os.Args[1:], os.Stdout, logger, listenHTTP, listenHTTPS))
+}
+
+type listenFunc func(*http.Server) error
+
+func run(ctx context.Context, args []string, stdout io.Writer, logger *slog.Logger, httpListen, httpsListen listenFunc) int {
+	if stdout == nil {
+		stdout = io.Discard
+	}
+	if logger == nil {
+		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+	}
+	if httpListen == nil {
+		httpListen = listenHTTP
+	}
+	if httpsListen == nil {
+		httpsListen = listenHTTPS
+	}
+
+	cfg, err := config.Load(args)
 	if err != nil {
 		logger.Error("invalid config", "error", err)
-		os.Exit(2)
+		return 2
 	}
 	if cfg.Version {
-		fmt.Printf("vimock %s\n", version)
-		return
+		_, _ = fmt.Fprintf(stdout, "vimock %s\n", version)
+		return 0
 	}
 
 	handler := server.NewHandler(logger)
@@ -57,7 +80,7 @@ func main() {
 		)
 		if err != nil {
 			logger.Error("invalid tls config", "error", err)
-			os.Exit(2)
+			return 2
 		}
 
 		httpsProtocols := new(http.Protocols)
@@ -76,33 +99,31 @@ func main() {
 	errCh := make(chan serverError, len(servers))
 	go func() {
 		logger.Info("starting vimock", "addr", cfg.Addr(), "protocols", protocols.String())
-		errCh <- serverError{name: "http", err: httpServer.ListenAndServe()}
+		errCh <- serverError{name: "http", err: httpListen(httpServer)}
 	}()
 	if len(servers) > 1 {
 		httpsServer := servers[1]
 		go func() {
 			logger.Info("starting vimock https", "addr", cfg.HTTPSAddr(), "protocols", httpsServer.Protocols.String())
-			errCh <- serverError{name: "https", err: httpsServer.ListenAndServeTLS("", "")}
+			errCh <- serverError{name: "https", err: httpsListen(httpsServer)}
 		}()
 	}
-
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 
 	select {
 	case <-ctx.Done():
 		if err := shutdownServers(servers); err != nil {
 			logger.Error("shutdown failed", "error", err)
-			os.Exit(1)
+			return 1
 		}
 		logger.Info("vimock stopped")
 	case serverErr := <-errCh:
 		if !errors.Is(serverErr.err, http.ErrServerClosed) {
 			logger.Error("server failed", "listener", serverErr.name, "error", serverErr.err)
 			_ = shutdownServers(servers)
-			os.Exit(1)
+			return 1
 		}
 	}
+	return 0
 }
 
 type serverError struct {
@@ -129,4 +150,12 @@ func certificateHosts(host string) []string {
 		host = parsedHost
 	}
 	return append(hosts, host)
+}
+
+func listenHTTP(server *http.Server) error {
+	return server.ListenAndServe()
+}
+
+func listenHTTPS(server *http.Server) error {
+	return server.ListenAndServeTLS("", "")
 }

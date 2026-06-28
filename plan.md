@@ -1464,14 +1464,51 @@ go tool cover -func=coverage.out
 Отчет ИИ по шагу 16:
 
 ```text
-Статус: TODO
+Статус: DONE
 Сделано:
+- Добавлены focused unit/contract tests до общего statement coverage 90.3%.
+- Рефакторинг CLI runner в cmd/vimock/main.go сделал main тестируемым без запуска реальных long-running процессов.
+- Покрыты дополнительные ветки mapping parser/matcher, Admin API, runtime, gRPC descriptor/runtime/helpers, GraphQL matcher, response renderer, proxy, recording, delays, scenarios, TLS и config.
+- Собран финальный compliance report: docs/mvp-compliance-report.md.
+- Добавлена документация шага: docs/step-16-mvp-acceptance.md.
+- README обновлен quality gate командами и ссылками на acceptance/compliance docs.
 Измененные файлы:
+- cmd/vimock/main.go
+- README.md
+- docs/README.md
+- docs/step-16-mvp-acceptance.md
+- docs/mvp-compliance-report.md
+- новые *_coverage_test.go и cmd/vimock/main_test.go в cmd/internal пакетах
 Как запускать:
+- GOCACHE=$(pwd)/.gocache go test ./...
+- GOCACHE=$(pwd)/.gocache go test -race ./...
+- GOCACHE=$(pwd)/.gocache go test -coverprofile=coverage.out ./...
+- GOCACHE=$(pwd)/.gocache go tool cover -func=coverage.out
+- GOCACHE=$(pwd)/.gocache go test -run '^$' -bench=. -benchmem ./internal/server ./internal/response
+- GOCACHE=$(pwd)/.gocache go build -o /tmp/vimock ./cmd/vimock
+- /tmp/vimock --version
 Проверки и результаты:
+- go test ./...: PASS
+- go test -race ./...: PASS
+- go test -coverprofile=coverage.out ./...: PASS
+- go tool cover -func=coverage.out: total 90.3%
+- BenchmarkRuntimeMatchAndRespondThousandMappings: 5862 ns/op, 10837 B/op, 36 allocs/op
+- BenchmarkRenderTemplateJSONPath: 3216 ns/op, 2385 B/op, 42 allocs/op
+- go build ./cmd/vimock: PASS
+- --version: vimock dev
 Покрытые требования:
+- TEST-001, TEST-002, TEST-005, TEST-006
+- ACC-009
+- Acceptance coverage по остальным группам зафиксирован в docs/mvp-compliance-report.md
 Known gaps:
+- Black-box API suite остается отдельным шагом 17.
+- gRPC streaming/reflection/proxying/recording не реализованы.
+- .proto files загружаются через Admin API, но не компилируются в active descriptor registry.
+- Recording поддерживает core start/stop/snapshot/proxy workflow, но не весь WireMock record spec.
+- GraphQL federation-specific matching не реализован.
 Риски/решения:
+- Полная продуктовая совместимость пока PARTIAL; точный статус по requirement IDs зафиксирован в compliance report.
+- Временные каталоги examples/autotests-example не используются как runtime test dependency; стабильные fixtures остаются в testdata.
 ```
 
 ## Шаг 17. Black-box автотесты API запущенного сервиса
