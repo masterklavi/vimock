@@ -13,6 +13,7 @@ import (
 	"vimock/internal/matcher"
 	"vimock/internal/proxy"
 	"vimock/internal/response"
+	"vimock/internal/scenario"
 )
 
 const noMappingsMessage = "No response could be served as there are no stub mappings in this WireMock instance."
@@ -21,6 +22,7 @@ type runtimeAPI struct {
 	mappings  *mapping.Store
 	renderer  response.Renderer
 	forwarder proxy.Forwarder
+	scenarios scenario.StateStore
 	sleeper   delay.Sleeper
 }
 
@@ -73,19 +75,18 @@ func (a runtimeAPI) findMatch(r *http.Request, body *matcher.BodyContext) (mappi
 	query := r.URL.Query()
 	headers := r.Header
 
-	var selected mapping.Mapping
-	var found bool
+	candidates := make([]mapping.Mapping, 0)
 	for _, stub := range a.mappings.List() {
 		if !stub.Request().Matches(r.Method, requestURI, path, query, headers, body) {
 			continue
 		}
-		if !found || compareStubOrder(stub, selected) < 0 {
-			selected = stub
-			found = true
-		}
+		candidates = append(candidates, stub)
 	}
 
-	return selected, found
+	if a.scenarios == nil {
+		return selectBestStub(candidates)
+	}
+	return a.scenarios.SelectAndTransition(candidates, compareStubOrder)
 }
 
 func compareStubOrder(left, right mapping.Mapping) int {
@@ -99,6 +100,18 @@ func compareStubOrder(left, right mapping.Mapping) int {
 		return 1
 	}
 	return 0
+}
+
+func selectBestStub(candidates []mapping.Mapping) (mapping.Mapping, bool) {
+	var selected mapping.Mapping
+	var found bool
+	for _, stub := range candidates {
+		if !found || compareStubOrder(stub, selected) < 0 {
+			selected = stub
+			found = true
+		}
+	}
+	return selected, found
 }
 
 func (a runtimeAPI) writeNoMatch(w http.ResponseWriter, _ *http.Request) {

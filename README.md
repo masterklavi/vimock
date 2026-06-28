@@ -79,6 +79,8 @@ Tag pushes create GitHub Release assets for Linux and macOS on `amd64` and `arm6
 - Proxy mappings via `response.proxyBaseUrl`.
 - Proxy prefix rewriting via `response.proxyUrlPrefixToRemove`.
 - Response delays: `fixedDelayMilliseconds`, `delayDistribution`, `chunkedDribbleDelay`.
+- Stateful scenarios via `scenarioName`, `requiredScenarioState`, `newScenarioState`.
+- Scenario reset endpoint: `POST /__admin/scenarios/reset`.
 - Legacy file auth endpoint: `POST /api/login`.
 - Legacy file upload create endpoint: `POST /api/tus/{file}?override=true`.
 - Legacy file upload bytes endpoint: `PATCH /api/tus/{file}?override=true`.
@@ -94,7 +96,6 @@ Tag pushes create GitHub Release assets for Linux and macOS on `amd64` and `arm6
 - Full TUS protocol beyond the current autotest upload workflow.
 - Static or persistent body file storage.
 - Recording and snapshotting.
-- Scenario state.
 - Native gRPC descriptor Admin API and gRPC stubbing.
 - GraphQL matcher support.
 - Black-box API autotests.
@@ -110,10 +111,11 @@ Tag pushes create GitHub Release assets for Linux and macOS on `amd64` and `arm6
 - [Step 5: Response templating and body files](docs/step-05-response-templating-and-body-files.md)
 - [Step 6: Legacy File API](docs/step-06-legacy-file-api.md)
 - [Step 8: Proxy and delays](docs/step-08-proxy-and-delays.md)
+- [Step 9: Stateful scenarios](docs/step-09-stateful-scenarios.md)
 
 ## Scope guardrails
 
-The current implementation is incremental. It includes the service bootstrap, port configuration, stdout logging, health/readiness endpoints, Admin API CRUD for mappings, basic HTTP stubbing, request matching needed by current mocks, targeted response templating, in-memory body files, proxy fallback, delays, and the legacy file upload workflow used by current autotests.
+The current implementation is incremental. It includes the service bootstrap, port configuration, stdout logging, health/readiness endpoints, Admin API CRUD for mappings, basic HTTP stubbing, request matching needed by current mocks, targeted response templating, in-memory body files, proxy fallback, delays, stateful scenarios, and the legacy file upload workflow used by current autotests.
 
 Advanced request matching beyond current fixtures, full WireMock response templating, full TUS support, recording, gRPC, and GraphQL are intentionally added in separate increments described in `plan.md`.
 

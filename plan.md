@@ -757,14 +757,64 @@ go test -race ./internal/scenario ./internal/runtime
 Отчет ИИ по шагу 9:
 
 ```text
-Статус: TODO
+Статус: DONE
 Сделано:
+- Добавлены typed mapping fields для `scenarioName`, `requiredScenarioState`, `newScenarioState` с сохранением raw JSON в Admin API responses.
+- Добавлен пакет `internal/scenario` с in-memory state store.
+- Начальное состояние любого scenario считается `Started`.
+- Runtime теперь сначала отбирает request-matching candidates, затем под scenario lock выбирает stub по `requiredScenarioState` и сразу выполняет transition в `newScenarioState`.
+- Операция scenario matching + transition сделана атомарной относительно параллельных HTTP-запросов.
+- Scenario state хранит только состояния, отличающиеся от виртуального `Started`, чтобы не раздувать память.
+- Scenario store отслеживает создание/обновление/удаление scenario mappings через Admin API и удаляет stale state при удалении последнего mapping-а scenario.
+- При `PUT /__admin/mappings/{id}` внутри того же scenario текущее состояние scenario сохраняется.
+- Добавлен WireMock-compatible endpoint `POST /__admin/scenarios/reset`, который сбрасывает все scenarios в `Started` и возвращает `{}`.
+- Добавлены unit tests на parsing scenario fields, state transitions, reset, удаление stale state и concurrent selection.
+- Добавлены runtime tests на stateful цепочку, пропуск stub-а в неправильном state и admin reset.
+- Обновлены README и docs по шагу 9.
+
 Измененные файлы:
+- `internal/mapping/model.go`
+- `internal/mapping/model_test.go`
+- `internal/scenario/store.go`
+- `internal/scenario/store_test.go`
+- `internal/server/admin.go`
+- `internal/server/runtime.go`
+- `internal/server/runtime_test.go`
+- `internal/server/server.go`
+- `README.md`
+- `docs/README.md`
+- `docs/step-09-stateful-scenarios.md`
+- `plan.md`
+
 Как запускать:
+- `go run ./cmd/vimock`
+- Создать mappings с `scenarioName`, `requiredScenarioState`, `newScenarioState`.
+- Несколько раз вызвать один и тот же stub URL и проверить последовательность responses.
+- `curl -i -X POST http://localhost:8080/__admin/scenarios/reset` для сброса всех scenario states.
+- `go test ./internal/scenario ./internal/server -run 'TestSelectAndTransition|TestRuntimeSupportsStatefulScenarios|TestAdminResetsScenarioState'`
+- `go test -race ./internal/scenario ./internal/server`
+- `go test ./...`
+
 Проверки и результаты:
+- `GOCACHE=/Users/vseiinstrumentyru/GolandProjects/vimock/.gocache go test ./internal/scenario ./internal/mapping ./internal/server` - успешно.
+- `GOCACHE=/Users/vseiinstrumentyru/GolandProjects/vimock/.gocache go test ./...` - успешно.
+- `GOCACHE=/Users/vseiinstrumentyru/GolandProjects/vimock/.gocache go test -race ./internal/scenario ./internal/server` - успешно.
+- `GOCACHE=/Users/vseiinstrumentyru/GolandProjects/vimock/.gocache go test -coverprofile=coverage.out ./...` - успешно.
+- `GOCACHE=/Users/vseiinstrumentyru/GolandProjects/vimock/.gocache go tool cover -func=coverage.out` - total coverage 73.1%.
+
 Покрытые требования:
+- SCN-001, SCN-002, SCN-003, SCN-004, SCN-005, SCN-006.
+
 Known gaps:
+- `GET /__admin/scenarios` не реализован, потому что GUI/state inspection не входит в шаг 9.
+- `PUT /__admin/scenarios/{name}/state` не реализован, потому что шаг требует reset hook, а ручная установка state не использовалась в текущих моках/автотестах.
+- Endpoint `/__admin/mappings/reset` пока не реализован; при появлении он должен также вызывать scenario reset/sync.
+- Общий coverage 73.1%; требование 90% остается финальным quality gate.
+
 Риски/решения:
+- Transition выполняется сразу после выбора stub-а, до rendering/proxy response. Это соответствует WireMock-подходу `onStubServed` после matching и не зависит от успешности записи response клиенту.
+- Чтобы не держать scenario lock во время JSONPath/body matching, runtime сначала собирает request candidates без scenario state, затем атомарно выбирает stateful stub и меняет state.
+- Scenario state не хранит полный список возможных states и не валидирует `newScenarioState` против него; это осознанное упрощение текущего шага, так как runtime mappings принимаются динамически и полная state inspection отложена.
 ```
 
 ## Шаг 10. Runtime-generated workflow автотестов

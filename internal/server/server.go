@@ -10,6 +10,7 @@ import (
 	"vimock/internal/mapping"
 	"vimock/internal/proxy"
 	"vimock/internal/response"
+	"vimock/internal/scenario"
 )
 
 type statusResponse struct {
@@ -37,7 +38,15 @@ func NewHandlerWithStores(logger *slog.Logger, mappings *mapping.Store, fileStor
 		fileStore = files.NewMemoryStore()
 	}
 
-	admin := adminAPI{mappings: mappings}
+	scenarios := scenario.NewStore()
+	for _, stub := range mappings.List() {
+		scenarios.MappingCreated(stub)
+	}
+
+	admin := adminAPI{
+		mappings:  mappings,
+		scenarios: scenarios,
+	}
 	filesAPI := fileAPI{files: fileStore}
 	runtime := runtimeAPI{
 		mappings: mappings,
@@ -45,6 +54,7 @@ func NewHandlerWithStores(logger *slog.Logger, mappings *mapping.Store, fileStor
 		forwarder: proxy.NewForwarder(&http.Client{
 			Timeout: 30 * time.Second,
 		}),
+		scenarios: scenarios,
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /__admin/health", healthHandler)
@@ -54,6 +64,7 @@ func NewHandlerWithStores(logger *slog.Logger, mappings *mapping.Store, fileStor
 	mux.HandleFunc("GET /__admin/mappings/{id}", admin.getMapping)
 	mux.HandleFunc("PUT /__admin/mappings/{id}", admin.updateMapping)
 	mux.HandleFunc("DELETE /__admin/mappings/{id}", admin.deleteMapping)
+	mux.HandleFunc("POST /__admin/scenarios/reset", admin.resetScenarios)
 	mux.HandleFunc("POST /__admin/ext/grpc/reset", admin.resetGRPC)
 	mux.HandleFunc("POST /api/login", filesAPI.login)
 	mux.HandleFunc("POST /api/tus/{file}", filesAPI.createUpload)

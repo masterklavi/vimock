@@ -20,10 +20,17 @@ type Mapping struct {
 	name       string
 	persistent bool
 	priority   int
+	scenario   Scenario
 	request    RequestPattern
 	response   ResponseDefinition
 	raw        map[string]json.RawMessage
 	sequence   uint64
+}
+
+type Scenario struct {
+	Name          string
+	RequiredState string
+	NewState      string
 }
 
 type RequestPattern struct {
@@ -110,6 +117,10 @@ func ParseJSONWithID(data []byte, overrideID string) (Mapping, error) {
 	if err != nil {
 		return Mapping{}, err
 	}
+	scenario, err := parseScenario(raw)
+	if err != nil {
+		return Mapping{}, err
+	}
 	if err := validateObjectField(raw, "request", true); err != nil {
 		return Mapping{}, err
 	}
@@ -133,6 +144,7 @@ func ParseJSONWithID(data []byte, overrideID string) (Mapping, error) {
 		name:       name,
 		persistent: persistent,
 		priority:   priority,
+		scenario:   scenario,
 		request:    request,
 		response:   response,
 		raw:        cloneRawMap(raw),
@@ -160,6 +172,22 @@ func (m Mapping) Sequence() uint64 {
 
 func (m Mapping) Priority() int {
 	return m.priority
+}
+
+func (m Mapping) Scenario() Scenario {
+	return m.scenario
+}
+
+func (m Mapping) ScenarioName() string {
+	return m.scenario.Name
+}
+
+func (m Mapping) RequiredScenarioState() string {
+	return m.scenario.RequiredState
+}
+
+func (m Mapping) NewScenarioState() string {
+	return m.scenario.NewState
 }
 
 func (m Mapping) Request() RequestPattern {
@@ -192,6 +220,27 @@ func (m Mapping) WithID(id string) (Mapping, error) {
 	next.raw = cloneRawMap(m.raw)
 	next.raw["id"] = mustMarshalRaw(id)
 	return next, nil
+}
+
+func parseScenario(raw map[string]json.RawMessage) (Scenario, error) {
+	name, err := stringField(raw, "scenarioName")
+	if err != nil {
+		return Scenario{}, err
+	}
+	requiredState, err := stringField(raw, "requiredScenarioState")
+	if err != nil {
+		return Scenario{}, err
+	}
+	newState, err := stringField(raw, "newScenarioState")
+	if err != nil {
+		return Scenario{}, err
+	}
+
+	return Scenario{
+		Name:          name,
+		RequiredState: requiredState,
+		NewState:      newState,
+	}, nil
 }
 
 func (m Mapping) MarshalJSON() ([]byte, error) {

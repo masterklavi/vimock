@@ -7,12 +7,14 @@ import (
 	"net/http"
 
 	"vimock/internal/mapping"
+	"vimock/internal/scenario"
 )
 
 const maxMappingBodySize = 32 << 20
 
 type adminAPI struct {
-	mappings *mapping.Store
+	mappings  *mapping.Store
+	scenarios *scenario.Store
 }
 
 type listMappingsResponse struct {
@@ -66,6 +68,7 @@ func (a adminAPI) createMapping(w http.ResponseWriter, r *http.Request) {
 	}
 
 	created := a.mappings.Create(stub)
+	a.scenarios.MappingCreated(created)
 	writeJSON(w, http.StatusCreated, created)
 }
 
@@ -75,7 +78,8 @@ func (a adminAPI) updateMapping(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if _, ok := a.mappings.Get(id); !ok {
+	existing, ok := a.mappings.Get(id)
+	if !ok {
 		writeAPIError(w, http.StatusNotFound, fmt.Sprintf("No stub mapping found with id %s", id))
 		return
 	}
@@ -92,6 +96,7 @@ func (a adminAPI) updateMapping(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	a.scenarios.MappingUpdated(existing, updated)
 	writeJSON(w, http.StatusOK, updated)
 }
 
@@ -102,11 +107,22 @@ func (a adminAPI) deleteMapping(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	existing, ok := a.mappings.Get(id)
+	if !ok {
+		writeAPIError(w, http.StatusNotFound, fmt.Sprintf("No stub mapping found with id %s", id))
+		return
+	}
 	if ok := a.mappings.Delete(id); !ok {
 		writeAPIError(w, http.StatusNotFound, fmt.Sprintf("No stub mapping found with id %s", id))
 		return
 	}
 
+	a.scenarios.MappingDeleted(existing)
+	writeJSON(w, http.StatusOK, map[string]any{})
+}
+
+func (a adminAPI) resetScenarios(w http.ResponseWriter, _ *http.Request) {
+	a.scenarios.Reset()
 	writeJSON(w, http.StatusOK, map[string]any{})
 }
 

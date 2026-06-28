@@ -129,6 +129,44 @@ func TestParseJSONResponseProxyAndDelays(t *testing.T) {
 	}
 }
 
+func TestParseJSONScenarioFields(t *testing.T) {
+	stub, err := ParseJSON([]byte(`{
+	  "scenarioName": "checkout",
+	  "requiredScenarioState": "Started",
+	  "newScenarioState": "Paid",
+	  "request": {
+	    "method": "POST",
+	    "urlPath": "/checkout"
+	  },
+	  "response": {
+	    "status": 200,
+	    "body": "paid"
+	  }
+	}`))
+	if err != nil {
+		t.Fatalf("ParseJSON() error = %v", err)
+	}
+
+	scenario := stub.Scenario()
+	if scenario.Name != "checkout" {
+		t.Fatalf("scenario.Name = %q, want checkout", scenario.Name)
+	}
+	if scenario.RequiredState != "Started" {
+		t.Fatalf("scenario.RequiredState = %q, want Started", scenario.RequiredState)
+	}
+	if scenario.NewState != "Paid" {
+		t.Fatalf("scenario.NewState = %q, want Paid", scenario.NewState)
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(mustJSON(t, stub), &body); err != nil {
+		t.Fatalf("decode marshaled mapping: %v", err)
+	}
+	if body["scenarioName"] != "checkout" || body["requiredScenarioState"] != "Started" || body["newScenarioState"] != "Paid" {
+		t.Fatalf("scenario raw fields were not preserved: %#v", body)
+	}
+}
+
 func TestParseJSONRejectsInvalidMapping(t *testing.T) {
 	tests := []struct {
 		name    string

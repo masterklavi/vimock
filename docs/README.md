@@ -11,3 +11,4 @@ This folder contains simple step-by-step documentation for implemented increment
 - [Step 5: Response templating and body files](step-05-response-templating-and-body-files.md)
 - [Step 6: Legacy File API](step-06-legacy-file-api.md)
 - [Step 8: Proxy and delays](step-08-proxy-and-delays.md)
+- [Step 9: Stateful scenarios](step-09-stateful-scenarios.md)

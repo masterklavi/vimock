@@ -510,6 +510,155 @@ func TestRuntimeAppliesFixedDelayAndChunkedDribble(t *testing.T) {
 	}
 }
 
+func TestRuntimeSupportsStatefulScenarios(t *testing.T) {
+	handler := newTestHandler()
+	createMapping(t, handler, `{
+	  "scenarioName": "job",
+	  "requiredScenarioState": "Started",
+	  "newScenarioState": "Running",
+	  "request": {
+	    "method": "GET",
+	    "urlPath": "/job"
+	  },
+	  "response": {
+	    "status": 202,
+	    "body": "started"
+	  },
+	  "priority": 1
+	}`)
+	createMapping(t, handler, `{
+	  "scenarioName": "job",
+	  "requiredScenarioState": "Running",
+	  "newScenarioState": "Done",
+	  "request": {
+	    "method": "GET",
+	    "urlPath": "/job"
+	  },
+	  "response": {
+	    "status": 202,
+	    "body": "running"
+	  },
+	  "priority": 1
+	}`)
+	createMapping(t, handler, `{
+	  "scenarioName": "job",
+	  "requiredScenarioState": "Done",
+	  "request": {
+	    "method": "GET",
+	    "urlPath": "/job"
+	  },
+	  "response": {
+	    "status": 200,
+	    "body": "done"
+	  },
+	  "priority": 1
+	}`)
+
+	first := requestWithBody(t, handler, http.MethodGet, "/job", "")
+	if first.Code != http.StatusAccepted || first.Body.String() != "started" {
+		t.Fatalf("first response = %d %q, want 202 started", first.Code, first.Body.String())
+	}
+
+	second := requestWithBody(t, handler, http.MethodGet, "/job", "")
+	if second.Code != http.StatusAccepted || second.Body.String() != "running" {
+		t.Fatalf("second response = %d %q, want 202 running", second.Code, second.Body.String())
+	}
+
+	third := requestWithBody(t, handler, http.MethodGet, "/job", "")
+	if third.Code != http.StatusOK || third.Body.String() != "done" {
+		t.Fatalf("third response = %d %q, want 200 done", third.Code, third.Body.String())
+	}
+
+	fourth := requestWithBody(t, handler, http.MethodGet, "/job", "")
+	if fourth.Code != http.StatusOK || fourth.Body.String() != "done" {
+		t.Fatalf("fourth response = %d %q, want 200 done", fourth.Code, fourth.Body.String())
+	}
+}
+
+func TestRuntimeSkipsScenarioStubInWrongState(t *testing.T) {
+	handler := newTestHandler()
+	createMapping(t, handler, `{
+	  "scenarioName": "choice",
+	  "requiredScenarioState": "Later",
+	  "request": {
+	    "method": "GET",
+	    "urlPath": "/choice"
+	  },
+	  "response": {
+	    "body": "wrong-state"
+	  },
+	  "priority": 1
+	}`)
+	createMapping(t, handler, `{
+	  "scenarioName": "choice",
+	  "requiredScenarioState": "Started",
+	  "request": {
+	    "method": "GET",
+	    "urlPath": "/choice"
+	  },
+	  "response": {
+	    "body": "right-state"
+	  },
+	  "priority": 5
+	}`)
+
+	resp := requestWithBody(t, handler, http.MethodGet, "/choice", "")
+	if resp.Code != http.StatusOK || resp.Body.String() != "right-state" {
+		t.Fatalf("response = %d %q, want 200 right-state", resp.Code, resp.Body.String())
+	}
+}
+
+func TestAdminResetsScenarioState(t *testing.T) {
+	handler := newTestHandler()
+	createMapping(t, handler, `{
+	  "scenarioName": "resettable",
+	  "requiredScenarioState": "Started",
+	  "newScenarioState": "Second",
+	  "request": {
+	    "method": "GET",
+	    "urlPath": "/resettable"
+	  },
+	  "response": {
+	    "body": "first"
+	  },
+	  "priority": 1
+	}`)
+	createMapping(t, handler, `{
+	  "scenarioName": "resettable",
+	  "requiredScenarioState": "Second",
+	  "request": {
+	    "method": "GET",
+	    "urlPath": "/resettable"
+	  },
+	  "response": {
+	    "body": "second"
+	  },
+	  "priority": 1
+	}`)
+
+	first := requestWithBody(t, handler, http.MethodGet, "/resettable", "")
+	if first.Body.String() != "first" {
+		t.Fatalf("first body = %q, want first", first.Body.String())
+	}
+	second := requestWithBody(t, handler, http.MethodGet, "/resettable", "")
+	if second.Body.String() != "second" {
+		t.Fatalf("second body = %q, want second", second.Body.String())
+	}
+
+	reset := requestWithBody(t, handler, http.MethodPost, "/__admin/scenarios/reset", "")
+	if reset.Code != http.StatusOK {
+		t.Fatalf("reset status = %d, want %d", reset.Code, http.StatusOK)
+	}
+	if strings.TrimSpace(reset.Body.String()) != "{}" {
+		t.Fatalf("reset body = %q, want {}", reset.Body.String())
+	}
+
+	afterReset := requestWithBody(t, handler, http.MethodGet, "/resettable", "")
+	if afterReset.Body.String() != "first" {
+		t.Fatalf("after reset body = %q, want first", afterReset.Body.String())
+	}
+}
+
 func TestRuntimeNoMappingsReturnsWireMockLikeNotFound(t *testing.T) {
 	handler := newTestHandler()
 
