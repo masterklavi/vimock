@@ -54,6 +54,11 @@ type Registry struct {
 	types *protoregistry.Types
 }
 
+type TypeResolver interface {
+	protoregistry.MessageTypeResolver
+	protoregistry.ExtensionTypeResolver
+}
+
 func NewStore() *Store {
 	return &Store{
 		blobs:  make(map[string]blob),
@@ -203,6 +208,13 @@ func (r Registry) FindMessageType(name string) (protoreflect.MessageType, bool) 
 		return nil, false
 	}
 	return messageType, true
+}
+
+func (r Registry) TypeResolver() TypeResolver {
+	if r.types == nil {
+		return protoregistry.GlobalTypes
+	}
+	return r.types
 }
 
 func ValidateFileName(name string) (string, string, error) {

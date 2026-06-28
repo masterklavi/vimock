@@ -1035,14 +1035,71 @@ go run ./cmd/vimock
 Отчет ИИ по шагу 12:
 
 ```text
-Статус: TODO
+Статус: DONE
 Сделано:
+- Добавлен unary gRPC runtime поверх существующего `net/http` handler.
+- gRPC requests распознаются по `POST` и `Content-Type: application/grpc`; обычный HTTP pipeline не изменен.
+- Реализован route lookup по `/<fully-qualified service>/<method>` через active descriptor registry.
+- Unary gRPC frame декодируется в protobuf payload; compressed messages пока явно отклоняются.
+- Request protobuf декодируется через dynamic descriptors и конвертируется в protobuf JSON с proto field names для существующего matcher pipeline.
+- Для matching переиспользуются текущие `urlPath`, method, headers, query и bodyPatterns.
+- Binary metadata headers `*-bin` для matcher-а декодируются из base64 в byte-array строку вида `[1, 2, 3]`.
+- Response renderer и `response-template` переиспользуются до protobuf encoding.
+- JSON response body кодируется обратно в output protobuf message и возвращается как gRPC frame.
+- Поддержаны `grpc-status-name` и `grpc-status-reason` как gRPC trailers.
+- Поддержан fallback mapping HTTP statuses в gRPC statuses: 400, 401, 403, 404, 429, 502, 503, 504.
+- Unmatched gRPC request возвращает `UNIMPLEMENTED` с сообщением `No matching stub mapping found for gRPC request`.
+- Добавлена стабильная PDM fixture `testdata/grpc_mapping.json`.
+- Добавлены in-process gRPC frame tests на PDM fixture, non-OK status, unmatched request и binary metadata matching.
+- README и docs обновлены по шагу 12.
+
 Измененные файлы:
+- `internal/grpcdesc/store.go`
+- `internal/server/runtime.go`
+- `internal/server/server.go`
+- `internal/server/grpc_runtime.go`
+- `internal/server/grpc_runtime_test.go`
+- `testdata/grpc_mapping.json`
+- `README.md`
+- `docs/README.md`
+- `docs/step-11-grpc-descriptor-registry.md`
+- `docs/step-12-grpc-stubbing-runtime.md`
+- `plan.md`
+
 Как запускать:
+- `go run ./cmd/vimock`
+- `curl -i -X PUT --data-binary @testdata/mc_product.dsc http://localhost:8080/__admin/ext/grpc/descriptors/mc_product.dsc`
+- `curl -i -X POST http://localhost:8080/__admin/ext/grpc/reset`
+- `curl -i -X POST http://localhost:8080/__admin/mappings -H 'Content-Type: application/json' --data-binary @testdata/grpc_mapping.json`
+- `curl -s http://localhost:8080/__admin/mappings`
+- `grpcurl -plaintext -protoset testdata/mc_product.dsc -d '{"guids":["b27ed95d-3717-4538-9be6-a7136b8ad52f"]}' localhost:8080 pdm_api_gateway.v1.MCProduct/WarehousesByNomenclature`
+
 Проверки и результаты:
+- `GOCACHE=/Users/vseiinstrumentyru/GolandProjects/vimock/.gocache go test ./...` - passed.
+- `GOCACHE=/Users/vseiinstrumentyru/GolandProjects/vimock/.gocache go test -race ./internal/grpcdesc ./internal/server` - passed.
+- `GOCACHE=/Users/vseiinstrumentyru/GolandProjects/vimock/.gocache go test -coverprofile=coverage.out ./...` - passed, total coverage 72.8%.
+
 Покрытые требования:
+- GRPC-003: gRPC method route maps to WireMock-compatible URL path.
+- GRPC-004, GRPC-005: request protobuf conversion to JSON body implemented.
+- GRPC-006: existing JSON matchers and response templating reused.
+- GRPC-007: JSON response conversion to protobuf implemented.
+- GRPC-008, GRPC-009, GRPC-010: OK/non-OK statuses, HTTP status fallback and unmatched `UNIMPLEMENTED` implemented.
+- MATCH-011: binary metadata `*-bin` converted for header matching.
+- ACC-007: representative PDM descriptor + mapping fixture covered by runtime test.
+
 Known gaps:
+- Только unary calls; client-streaming и server-streaming не реализованы.
+- gRPC reflection не реализован.
+- gRPC proxying и recording не реализованы.
+- `.proto` source compilation не реализован.
+- Compressed gRPC messages не поддерживаются.
+- Тесты используют in-process gRPC frame client, потому что текущий sandbox запрещает listen на loopback; wire-level format при этом проверяется тем же handler path.
+
 Риски/решения:
+- Серверная реализация не тянет `grpc-go`: используется `net/http`, gRPC framing и `google.golang.org/protobuf` dynamic/protojson runtime.
+- Для совместимости с текущими PDM mappings request JSON генерируется с `UseProtoNames=true`, чтобы поля были в snake_case.
+- Active descriptor registry отдает TypeResolver для `google.protobuf.Any`; dedicated Any кейс пока не покрыт отдельным тестом.
 ```
 
 ## Шаг 13. GraphQL semantic matcher

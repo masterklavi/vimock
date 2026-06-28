@@ -93,6 +93,10 @@ Tag pushes create GitHub Release assets for Linux and macOS on `amd64` and `arm6
 - gRPC descriptor Admin API: `DELETE /__admin/ext/grpc/descriptors/{fileName}`.
 - gRPC descriptor registry reload: `POST /__admin/ext/grpc/reset`.
 - Legacy `.dsc` and `.desc` file uploads feed the gRPC descriptor registry when the uploaded bytes are valid `FileDescriptorSet` data.
+- Unary gRPC stubbing runtime for loaded descriptors.
+- gRPC request protobuf is adapted to protobuf JSON and matched by existing WireMock request matchers.
+- gRPC JSON response bodies are encoded back to protobuf responses.
+- gRPC status mapping via `grpc-status-name`, `grpc-status-reason`, and selected HTTP statuses.
 - WireMock-like 404 response for unmatched requests.
 
 ## TODO
@@ -103,7 +107,8 @@ Tag pushes create GitHub Release assets for Linux and macOS on `amd64` and `arm6
 - Full TUS protocol beyond the current autotest upload workflow.
 - Static or persistent body file storage.
 - Recording and snapshotting.
-- gRPC request/response protobuf conversion and gRPC stubbing runtime.
+- gRPC streaming support.
+- gRPC proxying and recording.
 - gRPC reflection over loaded descriptors.
 - `.proto` source compilation for the gRPC descriptor registry.
 - GraphQL matcher support.
@@ -123,12 +128,13 @@ Tag pushes create GitHub Release assets for Linux and macOS on `amd64` and `arm6
 - [Step 9: Stateful scenarios](docs/step-09-stateful-scenarios.md)
 - [Step 10: Runtime-generated workflow](docs/step-10-runtime-generated-workflow.md)
 - [Step 11: gRPC descriptor registry](docs/step-11-grpc-descriptor-registry.md)
+- [Step 12: gRPC stubbing runtime](docs/step-12-grpc-stubbing-runtime.md)
 
 ## Scope guardrails
 
-The current implementation is incremental. It includes the service bootstrap, port configuration, stdout logging, health/readiness endpoints, Admin API CRUD for mappings, basic HTTP stubbing, request matching needed by current mocks, targeted response templating, in-memory body files, proxy fallback, delays, stateful scenarios, runtime-generated mapping lifecycle checks, the legacy file upload workflow used by current autotests, and the gRPC descriptor registry foundation.
+The current implementation is incremental. It includes the service bootstrap, port configuration, stdout logging, health/readiness endpoints, Admin API CRUD for mappings, basic HTTP stubbing, request matching needed by current mocks, targeted response templating, in-memory body files, proxy fallback, delays, stateful scenarios, runtime-generated mapping lifecycle checks, the legacy file upload workflow used by current autotests, the gRPC descriptor registry foundation, and unary gRPC stubbing runtime.
 
-Advanced request matching beyond current fixtures, full WireMock response templating, full TUS support, recording, gRPC runtime execution, and GraphQL are intentionally added in separate increments described in `plan.md`.
+Advanced request matching beyond current fixtures, full WireMock response templating, full TUS support, recording, advanced gRPC features, and GraphQL are intentionally added in separate increments described in `plan.md`.
 
 ## License
 

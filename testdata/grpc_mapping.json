@@ -1,0 +1,26 @@
+{
+  "name": "WarehousesByNomenclature один склад",
+  "persistent": true,
+  "request": {
+    "urlPath": "/pdm_api_gateway.v1.MCProduct/WarehousesByNomenclature",
+    "method": "POST",
+    "bodyPatterns": [
+      {
+        "matchesJsonPath": "$[?(@.guids == ['b27ed95d-3717-4538-9be6-a7136b8ad52f'])]"
+      }
+    ]
+  },
+  "response": {
+    "status": 200,
+    "body": "{\"warehouses\": [{\"warehouses_guid\": [\"00000000-0000-0000-0000-050258290258\"],\"nomenclature_guid\": \"b27ed95d-3717-4538-9be6-a7136b8ad52f\"}]}",
+    "transformers": [
+      "response-template"
+    ]
+  },
+  "priority": 1,
+  "metadata": {
+    "wiremock-gui": {
+      "folder": "/DRUZ-PDM/WarehousesByNomenclature"
+    }
+  }
+}

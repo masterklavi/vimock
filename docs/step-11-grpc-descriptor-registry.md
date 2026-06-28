@@ -78,11 +78,10 @@ Invalid legacy `.dsc` and `.desc` uploads are still accepted by the legacy file 
 
 ## Current Scope
 
-- Protobuf request decoding is not implemented yet.
-- Protobuf response encoding is not implemented yet.
-- gRPC service/method dispatch is not implemented yet.
+- The descriptor registry is in-memory.
 - gRPC reflection is not implemented yet.
 - `.proto` source compilation is not implemented yet.
+- Unary gRPC request/response runtime is documented in [Step 12](step-12-grpc-stubbing-runtime.md).
 
 ## Tests
 

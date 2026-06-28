@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"vimock/internal/delay"
+	"vimock/internal/grpcdesc"
 	"vimock/internal/mapping"
 	"vimock/internal/matcher"
 	"vimock/internal/proxy"
@@ -19,16 +20,21 @@ import (
 const noMappingsMessage = "No response could be served as there are no stub mappings in this WireMock instance."
 
 type runtimeAPI struct {
-	mappings  *mapping.Store
-	renderer  response.Renderer
-	forwarder proxy.Forwarder
-	scenarios scenario.StateStore
-	sleeper   delay.Sleeper
+	mappings    *mapping.Store
+	descriptors *grpcdesc.Store
+	renderer    response.Renderer
+	forwarder   proxy.Forwarder
+	scenarios   scenario.StateStore
+	sleeper     delay.Sleeper
 }
 
 func (a runtimeAPI) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	if isAdminPath(r.URL.Path) {
 		http.NotFound(w, r)
+		return
+	}
+	if isGRPCRequest(r) {
+		a.serveGRPC(w, r)
 		return
 	}
 

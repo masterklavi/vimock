@@ -61,8 +61,9 @@ func NewHandlerWithStoresAndDescriptors(logger *slog.Logger, mappings *mapping.S
 		descriptors: descriptorStore,
 	}
 	runtime := runtimeAPI{
-		mappings: mappings,
-		renderer: response.NewRenderer(fileStore),
+		mappings:    mappings,
+		descriptors: descriptorStore,
+		renderer:    response.NewRenderer(fileStore),
 		forwarder: proxy.NewForwarder(&http.Client{
 			Timeout: 30 * time.Second,
 		}),
