@@ -1,0 +1,36 @@
+{
+  "name": "body query header matcher mapping",
+  "request": {
+    "method": "POST",
+    "urlPath": "/matchers",
+    "queryParameters": {
+      "date": {
+        "equalTo": "2025-10-14"
+      }
+    },
+    "headers": {
+      "Content-Type": {
+        "equalTo": "application/json"
+      }
+    },
+    "bodyPatterns": [
+      {
+        "matchesJsonPath": "$.params.providers[?(@ == 'provider-1')]"
+      },
+      {
+        "matchesJsonPath": {
+          "expression": "$.params.missing",
+          "absent": true
+        }
+      }
+    ]
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "text/plain"
+    },
+    "body": "matched by body query header"
+  },
+  "priority": 1
+}

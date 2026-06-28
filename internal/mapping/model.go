@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"vimock/internal/matcher"
 )
 
 const DefaultPriority = 5
@@ -30,7 +32,10 @@ type RequestPattern struct {
 	URLPath    string
 	URLPattern string
 
-	urlRegex *regexp.Regexp
+	BodyPatterns    []matcher.BodyPattern
+	QueryParameters map[string]matcher.EqualTo
+	Headers         map[string]matcher.EqualTo
+	urlRegex        *regexp.Regexp
 }
 
 type ResponseDefinition struct {
@@ -268,6 +273,18 @@ func parseRequest(raw json.RawMessage) (RequestPattern, error) {
 	if err != nil {
 		return RequestPattern{}, err
 	}
+	bodyPatterns, err := parseBodyPatterns(object["bodyPatterns"])
+	if err != nil {
+		return RequestPattern{}, err
+	}
+	queryParameters, err := matcher.ParseEqualToMap(object["queryParameters"], "request.queryParameters")
+	if err != nil {
+		return RequestPattern{}, err
+	}
+	headers, err := matcher.ParseEqualToMap(object["headers"], "request.headers")
+	if err != nil {
+		return RequestPattern{}, err
+	}
 
 	var urlRegex *regexp.Regexp
 	if urlPattern != "" {
@@ -282,25 +299,67 @@ func parseRequest(raw json.RawMessage) (RequestPattern, error) {
 		URL:        url,
 		URLPath:    urlPath,
 		URLPattern: urlPattern,
-		urlRegex:   urlRegex,
+		BodyPatterns: append([]matcher.BodyPattern(nil),
+			bodyPatterns...,
+		),
+		QueryParameters: queryParameters,
+		Headers:         headers,
+		urlRegex:        urlRegex,
 	}, nil
 }
 
-func (p RequestPattern) Matches(method, requestURI, path string) bool {
+func parseBodyPatterns(raw json.RawMessage) ([]matcher.BodyPattern, error) {
+	if len(raw) == 0 || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return nil, nil
+	}
+
+	var entries []json.RawMessage
+	if err := json.Unmarshal(raw, &entries); err != nil {
+		return nil, fmt.Errorf("request.bodyPatterns must be a JSON array")
+	}
+
+	patterns := make([]matcher.BodyPattern, 0, len(entries))
+	for _, entry := range entries {
+		pattern, err := matcher.ParseBodyPattern(entry)
+		if err != nil {
+			return nil, err
+		}
+		patterns = append(patterns, pattern)
+	}
+	return patterns, nil
+}
+
+func (p RequestPattern) Matches(method, requestURI, path string, query map[string][]string, headers map[string][]string, body *matcher.BodyContext) bool {
 	if !p.matchesMethod(method) {
 		return false
 	}
-	if p.URL != "" {
+	if !p.matchesURL(requestURI, path) {
+		return false
+	}
+	if !matcher.MatchQuery(p.QueryParameters, query) {
+		return false
+	}
+	if !matcher.MatchHeaders(p.Headers, headers) {
+		return false
+	}
+	if !matcher.MatchBodyPatternsWithContext(p.BodyPatterns, body) {
+		return false
+	}
+	return true
+}
+
+func (p RequestPattern) matchesURL(requestURI, path string) bool {
+	switch {
+	case p.URL != "":
 		return requestURI == p.URL
-	}
-	if p.URLPath != "" {
+	case p.URLPath != "":
 		return path == p.URLPath
-	}
-	if p.urlRegex != nil {
+	case p.urlRegex != nil:
 		match := p.urlRegex.FindStringIndex(requestURI)
 		return len(match) == 2 && match[0] == 0 && match[1] == len(requestURI)
+	default:
+		return false
 	}
-	return false
 }
 
 func (p RequestPattern) matchesMethod(method string) bool {

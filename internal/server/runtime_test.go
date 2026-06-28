@@ -1,8 +1,11 @@
 package server
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -195,6 +198,108 @@ func TestRuntimeDeletedMappingStopsMatching(t *testing.T) {
 	}
 }
 
+func TestRuntimeMatchesBodyQueryAndHeaders(t *testing.T) {
+	handler := newTestHandler()
+	createMapping(t, handler, `{
+	  "priority": 1,
+	  "request": {
+	    "method": "POST",
+	    "urlPath": "/matchers",
+	    "queryParameters": {
+	      "date": {
+	        "equalTo": "2025-10-14"
+	      }
+	    },
+	    "headers": {
+	      "Content-Type": {
+	        "equalTo": "application/json"
+	      }
+	    },
+	    "bodyPatterns": [
+	      {
+	        "matchesJsonPath": "$.params.providers[?(@ == 'provider-1')]"
+	      },
+	      {
+	        "matchesJsonPath": {
+	          "expression": "$.params.missing",
+	          "absent": true
+	        }
+	      }
+	    ]
+	  },
+	  "response": {
+	    "status": 200,
+	    "body": "matched"
+	  }
+	}`)
+
+	resp := requestWithHeadersAndBody(
+		t,
+		handler,
+		http.MethodPost,
+		"/matchers?date=2025-10-14",
+		map[string]string{"Content-Type": "application/json"},
+		`{"params":{"providers":["provider-1"]}}`,
+	)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	if got := resp.Body.String(); got != "matched" {
+		t.Fatalf("body = %q, want matched", got)
+	}
+
+	wrongBody := requestWithHeadersAndBody(
+		t,
+		handler,
+		http.MethodPost,
+		"/matchers?date=2025-10-14",
+		map[string]string{"Content-Type": "application/json"},
+		`{"params":{"providers":["other"]}}`,
+	)
+	if wrongBody.Code != http.StatusNotFound {
+		t.Fatalf("wrong body status = %d, want %d", wrongBody.Code, http.StatusNotFound)
+	}
+
+	wrongQuery := requestWithHeadersAndBody(
+		t,
+		handler,
+		http.MethodPost,
+		"/matchers?date=2025-10-15",
+		map[string]string{"Content-Type": "application/json"},
+		`{"params":{"providers":["provider-1"]}}`,
+	)
+	if wrongQuery.Code != http.StatusNotFound {
+		t.Fatalf("wrong query status = %d, want %d", wrongQuery.Code, http.StatusNotFound)
+	}
+}
+
+func TestRuntimeMatchesEqualToJSON(t *testing.T) {
+	handler := newTestHandler()
+	createMapping(t, handler, `{
+	  "request": {
+	    "method": "POST",
+	    "urlPath": "/equal-json",
+	    "bodyPatterns": [
+	      {
+	        "equalToJson": "{\"a\":1,\"b\":2}"
+	      }
+	    ]
+	  },
+	  "response": {
+	    "status": 200,
+	    "body": "equal"
+	  }
+	}`)
+
+	resp := requestWithBody(t, handler, http.MethodPost, "/equal-json", `{"b":2,"a":1}`)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", resp.Code, http.StatusOK)
+	}
+	if got := resp.Body.String(); got != "equal" {
+		t.Fatalf("body = %q, want equal", got)
+	}
+}
+
 func TestRuntimeNoMappingsReturnsWireMockLikeNotFound(t *testing.T) {
 	handler := newTestHandler()
 
@@ -223,4 +328,21 @@ func createMapping(t *testing.T, handler http.Handler, body string) string {
 		t.Fatalf("created id = %v, want non-empty string", created["id"])
 	}
 	return id
+}
+
+func requestWithHeadersAndBody(t *testing.T, handler http.Handler, method, path string, headers map[string]string, body string) *httptest.ResponseRecorder {
+	t.Helper()
+
+	var reader io.Reader
+	if body != "" {
+		reader = bytes.NewBufferString(body)
+	}
+	req := httptest.NewRequest(method, path, reader)
+	for name, value := range headers {
+		req.Header.Set(name, value)
+	}
+
+	resp := httptest.NewRecorder()
+	handler.ServeHTTP(resp, req)
+	return resp
 }

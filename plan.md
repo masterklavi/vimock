@@ -314,14 +314,70 @@ go test ./internal/matcher -run TestCurrentMockPatterns
 Отчет ИИ по шагу 4:
 
 ```text
-Статус: TODO
+Статус: DONE
 Сделано:
+- Добавлен пакет `internal/matcher` с минимальным JSONPath evaluator под формы, которые используются в `examples` и `autotests-example/mocks`.
+- Поддержан string `bodyPatterns.matchesJsonPath`.
+- Поддержан object `bodyPatterns.matchesJsonPath` с `expression` и `absent=true`.
+- Поддержаны JSONPath path segments: поля, array index, wildcard `*`.
+- Поддержаны JSONPath filters `?()` с equality по строкам, числам, bool, `null` и массивам.
+- Поддержаны `.size()` checks для массивов, объектов и строк.
+- Поддержаны `request.queryParameters.*.equalTo`.
+- Поддержаны `request.headers.*.equalTo`, включая `Content-Type: application/protobuf`.
+- Поддержан базовый `bodyPatterns.equalToJson` как foundation для gRPC/recording.
+- Runtime matching теперь учитывает method/url/query/headers/bodyPatterns вместе.
+- Body JSON parsing оптимизирован: body парсится лениво и не более одного раза на HTTP request, затем переиспользуется всеми body matchers.
+- Добавлен fixture parsing test для всех JSON mappings из `examples` и `autotests-example/mocks`.
+- Добавлен `testdata/matcher_mapping.json` для ручной проверки body/query/header matching.
+- Обновлены README и docs по шагу 4.
+
 Измененные файлы:
+- `internal/matcher/jsonpath.go`
+- `internal/matcher/request.go`
+- `internal/matcher/jsonpath_test.go`
+- `internal/mapping/model.go`
+- `internal/mapping/fixtures_test.go`
+- `internal/server/runtime.go`
+- `internal/server/runtime_test.go`
+- `testdata/matcher_mapping.json`
+- `README.md`
+- `docs/README.md`
+- `docs/step-04-request-matching.md`
+- `plan.md`
+
 Как запускать:
+- `go run ./cmd/vimock`
+- `curl -X POST http://localhost:8080/__admin/mappings -H 'Content-Type: application/json' --data-binary @testdata/matcher_mapping.json`
+- `curl -i -X POST 'http://localhost:8080/matchers?date=2025-10-14' -H 'Content-Type: application/json' --data '{"params":{"providers":["provider-1"]}}'`
+- `go test ./internal/matcher -run TestCurrentMockPatterns`
+
 Проверки и результаты:
+- `GOCACHE=/Users/vseiinstrumentyru/GolandProjects/vimock/.gocache go test ./...` - успешно.
+- `GOCACHE=/Users/vseiinstrumentyru/GolandProjects/vimock/.gocache go test -race ./...` - успешно.
+- `GOCACHE=/Users/vseiinstrumentyru/GolandProjects/vimock/.gocache go test ./internal/matcher -run TestCurrentMockPatterns` - успешно.
+- `GOCACHE=/Users/vseiinstrumentyru/GolandProjects/vimock/.gocache go test -coverprofile=coverage.out ./...` - успешно.
+- `GOCACHE=/Users/vseiinstrumentyru/GolandProjects/vimock/.gocache go tool cover -func=coverage.out` - total coverage 74.8%.
+- Fixture parsing test: все JSON mappings из `examples` и `autotests-example/mocks` успешно парсятся.
+- Ручная проверка `POST /__admin/mappings` на `testdata/matcher_mapping.json` - HTTP 201.
+- Ручная проверка matching request `POST /matchers?date=2025-10-14` с `Content-Type: application/json` и body `{"params":{"providers":["provider-1"]}}` - HTTP 200, body `matched by body query header`.
+- Ручная negative проверка с body `{"params":{"providers":["other"]}}` - HTTP 404.
+- `docker build -t vimock:dev .` - успешно.
+
 Покрытые требования:
+- MATCH-001, MATCH-002, MATCH-003, MATCH-004, MATCH-005, MATCH-006, MATCH-007, MATCH-008, MATCH-009, MATCH-010, MATCH-011, MATCH-012, JRPC-001, TEST-003.
+
 Known gaps:
+- Полная JSONPath compatibility сверх текущих моков не реализована.
+- Полная JSONUnit compatibility для `equalToJson` не реализована.
+- Response templating и helper `{{jsonPath request.body '...'}}` не реализованы, это scope шага 5.
+- Body files не реализованы, это scope шага 5.
+- Общий coverage пока 74.8%; требование 90% остается финальным quality gate.
+
 Риски/решения:
+- JSONPath реализован как targeted evaluator под текущие fixture patterns, чтобы не тянуть внешний runtime dependency и не расширять scope шага.
+- Если в новых моках появятся Java JSONPath/JsonUnit возможности за пределами текущих паттернов, fixture parsing/matcher tests должны подсветить это и evaluator нужно будет расширить.
+- Для производительности body JSON parsing выполняется лениво один раз на request и переиспользуется всеми candidate mappings.
+- В sandbox bind/listen, curl к локальному порту и Docker daemon требуют elevated execution; в обычном локальном окружении эти команды должны выполняться без дополнительных прав.
 ```
 
 ## Шаг 5. Response templating и body files

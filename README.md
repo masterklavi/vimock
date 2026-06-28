@@ -48,16 +48,20 @@ docker run --rm -p 8080:8080 vimock:dev
 - Basic HTTP stubbing for non-Admin requests.
 - Request methods: `ANY`, `GET`, `POST`.
 - URL matchers: `request.url`, `request.urlPath`, `request.urlPattern`.
+- Request body matcher: `bodyPatterns.matchesJsonPath`.
+- Request body matcher: `bodyPatterns.matchesJsonPath.expression` with `absent=true`.
+- JSONPath filters with `?()`, arrays, nested fields, scalar equality and `.size()`.
+- Query parameter matcher: `request.queryParameters.*.equalTo`.
+- Header matcher: `request.headers.*.equalTo`.
+- Request body matcher: `bodyPatterns.equalToJson`.
 - Priority selection with deterministic insertion-order tie-breaker.
 - Response fields: `status`, `headers`, `body`, `jsonBody`.
 - WireMock-like 404 response for unmatched requests.
 
 ## TODO
 
-- Request body matchers, including JSONPath.
-- Query parameter matchers.
-- Header matchers.
-- `equalToJson`.
+- Full JSONPath compatibility beyond patterns used by current mocks.
+- Full JSONUnit compatibility for `equalToJson`.
 - Response templating.
 - Body files.
 - Delays.
@@ -76,9 +80,14 @@ docker run --rm -p 8080:8080 vimock:dev
 - [Step 1: Service bootstrap](docs/step-01-bootstrap.md)
 - [Step 2: Mapping Admin API](docs/step-02-admin-api.md)
 - [Step 3: Basic HTTP stubbing](docs/step-03-basic-http-stubbing.md)
+- [Step 4: Request matching](docs/step-04-request-matching.md)
 
 ## Scope guardrails
 
-The current implementation is incremental. It includes the service bootstrap, port configuration, stdout logging, health/readiness endpoints, Admin API CRUD for mappings, and basic HTTP stubbing.
+The current implementation is incremental. It includes the service bootstrap, port configuration, stdout logging, health/readiness endpoints, Admin API CRUD for mappings, basic HTTP stubbing, and request matching needed by current mocks.
 
-Advanced request matchers, response templating, body files, proxying, recording, gRPC, and GraphQL are intentionally added in separate increments described in `plan.md`.
+Advanced request matching beyond current fixtures, response templating, body files, proxying, recording, gRPC, and GraphQL are intentionally added in separate increments described in `plan.md`.
+
+## License
+
+VIMock is licensed under the [Apache License 2.0](LICENSE).

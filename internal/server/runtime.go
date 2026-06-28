@@ -2,10 +2,12 @@ package server
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 
 	"vimock/internal/mapping"
+	"vimock/internal/matcher"
 )
 
 const noMappingsMessage = "No response could be served as there are no stub mappings in this WireMock instance."
@@ -20,7 +22,14 @@ func (a runtimeAPI) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	stub, ok := a.findMatch(r)
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		a.writeNoMatch(w, r)
+		return
+	}
+
+	bodyContext := matcher.NewBodyContext(body)
+	stub, ok := a.findMatch(r, bodyContext)
 	if !ok {
 		a.writeNoMatch(w, r)
 		return
@@ -29,14 +38,16 @@ func (a runtimeAPI) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	writeStubResponse(w, stub.Response())
 }
 
-func (a runtimeAPI) findMatch(r *http.Request) (mapping.Mapping, bool) {
+func (a runtimeAPI) findMatch(r *http.Request, body *matcher.BodyContext) (mapping.Mapping, bool) {
 	requestURI := r.URL.RequestURI()
 	path := r.URL.Path
+	query := r.URL.Query()
+	headers := r.Header
 
 	var selected mapping.Mapping
 	var found bool
 	for _, stub := range a.mappings.List() {
-		if !stub.Request().Matches(r.Method, requestURI, path) {
+		if !stub.Request().Matches(r.Method, requestURI, path, query, headers, body) {
 			continue
 		}
 		if !found || compareStubOrder(stub, selected) < 0 {
