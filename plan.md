@@ -1557,16 +1557,65 @@ VIMOCK_BASE_URL=http://localhost:8080 go test ./...
 Отчет ИИ по шагу 17:
 
 ```text
-Статус: TODO
+Статус: DONE
 Сделано:
+- Создан отдельный black-box пакет autotest/ без импортов vimock/internal.
+- Добавлен безопасный режим: без VIMOCK_BASE_URL и без VIMOCK_AUTOTEST_START=1 network autotests skip-аются, поэтому go test ./... и GitHub release workflow не ломаются из-за не поднятого vimock.
+- Добавлен self-start режим: VIMOCK_AUTOTEST_START=1 собирает/запускает временный vimock binary на свободном локальном порту.
+- Добавлен режим запуска против существующего сервиса через VIMOCK_BASE_URL.
+- Добавлены black-box проверки Admin API, HTTP matching, response pipeline, file API, proxy, recording, scenarios, gRPC и GraphQL.
+- Добавлен machine-readable feature report: autotest/reports/features.json.
+- Добавлена документация: autotest/README.md и docs/step-17-black-box-autotests.md.
 Измененные файлы:
+- autotest/README.md
+- autotest/suite_test.go
+- autotest/http_features_test.go
+- autotest/proxy_recording_test.go
+- autotest/grpc_graphql_test.go
+- autotest/report_test.go
+- autotest/reports/features.json
+- docs/step-17-black-box-autotests.md
+- docs/README.md
+- docs/mvp-compliance-report.md
+- README.md
+- plan.md
 Как запускать:
+- go test ./...
+- VIMOCK_BASE_URL=http://localhost:8080 go test ./autotest/...
+- VIMOCK_AUTOTEST_START=1 go test ./autotest/...
+- VIMOCK_AUTOTEST_START=1 VIMOCK_BINARY=./bin/vimock go test ./autotest/...
+- Для Docker Desktop proxy/recording: VIMOCK_AUTOTEST_UPSTREAM_HOST=host.docker.internal
 Проверки и результаты:
+- go test ./...: PASS; autotest package не требует поднятого vimock и не ломает release workflow.
+- VIMOCK_AUTOTEST_START=1 go test -count=1 -v ./autotest: PASS.
 Покрытые требования:
+- TEST-003, TEST-004, TEST-005
+- ACC-001, ACC-002, ACC-003, ACC-004, ACC-005, ACC-006, ACC-007, ACC-008, ACC-010
 Feature coverage из current-mocks.md:
+- Admin API CRUD и list mappings.
+- Mapping fields id/name/persistent/priority/metadata.wiremock-gui.folder.
+- URL/method matching: ANY, GET, POST, urlPath, urlPattern, urlPathPattern.
+- Query/header/body matchers: equalTo, matchesJsonPath, absent matchesJsonPath, equalToJson.
+- Response pipeline: status, headers, body, jsonBody, response-template, bodyFileName, binary body.
+- Priority fallback, delays, scenarios, proxying, recording.
+- gRPC descriptor upload/reset/list, unary request/response, JSON matching, non-OK statuses.
+- GraphQL semantic matcher, variables, operationName, positive/negative cases.
 Feature coverage из current-autotest.md:
+- Bootstrap-like mapping upload через POST /__admin/mappings.
+- Static reload workflow через GET /__admin/mappings + name/folder lookup + PUT /__admin/mappings/{id}.
+- Legacy file workflow: POST /api/login, POST/PATCH /api/tus/{file}?override=true.
+- .dsc upload и POST /__admin/ext/grpc/reset.
+- Runtime-generated mapping lifecycle: create, use, delete.
+- PDM/gRPC, JSON-RPC-like templated responses, Courier/Frodo/Fry-like HTTP feature groups покрыты feature-driven сценариями.
 Known gaps:
+- Request journal / WireMock verification API не проверяется: текущий анализ автотестов его не использует, VIMock пока его не реализует.
+- Black-box suite покрывает уникальные фичи, а не каждый исторический mapping файл по отдельности.
+- gRPC streaming/reflection/proxying/recording остаются known gaps.
+- GraphQL federation-specific matching остается known gap.
 Риски/решения:
+- Чтобы release workflow не зависел от внешнего процесса, network autotests требуют явного VIMOCK_BASE_URL или VIMOCK_AUTOTEST_START=1.
+- Для Docker proxy/recording тестов нужен upstream host, достижимый из контейнера; задокументирован VIMOCK_AUTOTEST_UPSTREAM_HOST.
+- В sandbox self-start требует разрешения на локальный listener; обычный go test ./... проходит без escalated permissions.
 ```
 
 ## Полное покрытие требований по шагам

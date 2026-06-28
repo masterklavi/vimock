@@ -19,4 +19,5 @@ This folder contains simple step-by-step documentation for implemented increment
 - [Step 14: Recording and snapshotting](step-14-recording-and-snapshotting.md)
 - [Step 15: HTTPS, Docker and performance baseline](step-15-https-docker-kubernetes-performance.md)
 - [Step 16: MVP acceptance and quality gate](step-16-mvp-acceptance.md)
+- [Step 17: Black-box API autotests](step-17-black-box-autotests.md)
 - [MVP compliance report](mvp-compliance-report.md)

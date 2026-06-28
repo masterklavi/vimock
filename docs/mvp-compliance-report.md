@@ -12,11 +12,12 @@ Step 16 quality gate is passed for the current in-repository MVP implementation:
 - Statement coverage: PASS, `90.3%`.
 - Binary build and `--version`: PASS.
 - Stable fixture/contract tests from `testdata`: PASS.
+- Black-box API autotest suite: PASS when explicitly enabled, safe skip by default.
 - Performance smoke benchmarks: PASS.
 
 Overall product compliance status: PARTIAL.
 
-Reason: the implemented service covers the main HTTP/WireMock-compatible runtime, Admin API, matching, response rendering, proxying, delays, scenarios, recording basics, legacy file upload, unary gRPC runtime and GraphQL semantic matching. Some broader `tz.md` requirements remain intentionally open or partial, mostly around full WireMock recording spec parity, `.proto` compilation, advanced gRPC behavior and the separate black-box API suite planned for step 17.
+Reason: the implemented service covers the main HTTP/WireMock-compatible runtime, Admin API, matching, response rendering, proxying, delays, scenarios, recording basics, legacy file upload, unary gRPC runtime, GraphQL semantic matching and a black-box API autotest suite. Some broader `tz.md` requirements remain intentionally open or partial, mostly around full WireMock recording spec parity, `.proto` compilation and advanced gRPC behavior.
 
 ## Quality Gate Evidence
 
@@ -28,6 +29,7 @@ GOCACHE=$(pwd)/.gocache go tool cover -func=coverage.out
 GOCACHE=$(pwd)/.gocache go test -run '^$' -bench=. -benchmem ./internal/server ./internal/response
 GOCACHE=$(pwd)/.gocache go build -o /tmp/vimock ./cmd/vimock
 /tmp/vimock --version
+VIMOCK_AUTOTEST_START=1 go test -count=1 -v ./autotest
 ```
 
 Latest results:
@@ -38,6 +40,7 @@ Latest results:
 - `BenchmarkRuntimeMatchAndRespondThousandMappings`: `5862 ns/op`, `10837 B/op`, `36 allocs/op`.
 - `BenchmarkRenderTemplateJSONPath`: `3216 ns/op`, `2385 B/op`, `42 allocs/op`.
 - `--version`: `vimock dev`.
+- `VIMOCK_AUTOTEST_START=1 go test -count=1 -v ./autotest`: PASS.
 
 ## Requirement Matrix
 
@@ -62,11 +65,11 @@ Latest results:
 | `NFR-001..NFR-006` | PASS | Race tests pass; matching uses immutable snapshots and indexed candidates; runtime avoids unnecessary mapping/response copies. |
 | `TEST-001` | PASS | Statement coverage is `90.3%`. |
 | `TEST-002` | PASS | Tests cover matcher engine, priority, templating, Admin API, File API, gRPC descriptor registry and GraphQL matcher. |
-| `TEST-003..TEST-004` | PASS / PARTIAL | Stable `testdata` fixture and contract tests are present. Full external black-box API suite is step 17. Temporary source folders are not referenced. |
+| `TEST-003..TEST-004` | PASS | Stable `testdata` fixture, contract tests and black-box API suite are present. Temporary source folders are not referenced. |
 | `TEST-005` | PASS | `go test -race ./...` passes. |
 | `TEST-006` | PASS | Benchmark tests exist for matching and response rendering. |
 | `OUT-001..OUT-005` | PASS | Out-of-scope features remain unimplemented by design. |
-| `ACC-001..ACC-010` | PASS / PARTIAL | In-repository acceptance passes. Black-box API acceptance, full gRPC docs compatibility and full recording spec parity remain open. |
+| `ACC-001..ACC-010` | PASS / PARTIAL | In-repository acceptance and black-box API suite pass. Full gRPC docs compatibility and full recording spec parity remain open. |
 
 ## Open Or Partial Requirement IDs
 
@@ -78,11 +81,10 @@ Latest results:
 - `GQL-001`: core JSON/Admin mapping behavior is supported; non-runtime client DSL parity is not directly represented by the service API.
 - `GQL-007..GQL-010`: JSON custom matcher compatibility is implemented for `graphql-body-matcher`; exact client DSL syntax should be verified in step 17 black-box tests.
 - `FILE-011`: native body-file Admin API is not implemented.
-- `TEST-003..TEST-004`: covered by stable in-process fixtures/contracts, but not yet by a separate black-box suite.
-- `ACC-007..ACC-008`: covered by in-process gRPC/GraphQL contract tests; black-box API confirmation remains step 17.
+- `ACC-007..ACC-008`: covered by in-process and black-box gRPC/GraphQL contract tests; full docs-level parity still has the gRPC/GraphQL limitations listed above.
 
 ## Decision Notes
 
 - The old temporary source fixture directories are not referenced by tests or docs. Stable examples live under `testdata`.
 - Step 16 does not introduce new functional features beyond acceptance blockers and coverage; it mainly hardens tests and runner seams.
-- Step 17 should add public API black-box tests without importing VIMock internal packages.
+- Public API black-box tests live in `autotest/` and do not import VIMock internal packages.

@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "service": "vimock",
+  "suite": "black-box-api",
+  "defaultMode": "skip_without_target",
+  "targetActivation": {
+    "external": "VIMOCK_BASE_URL=http://localhost:8080 go test ./autotest/...",
+    "selfStart": "VIMOCK_AUTOTEST_START=1 go test ./autotest/...",
+    "binarySelfStart": "VIMOCK_AUTOTEST_START=1 VIMOCK_BINARY=./bin/vimock go test ./autotest/..."
+  },
+  "features": [
+    {"area": "admin", "feature": "health_ready", "status": "covered", "test": "TestBlackBoxHTTPAdminAndMatchingFeatureMatrix"},
+    {"area": "admin", "feature": "mapping_create_list_find_update_delete", "status": "covered", "test": "TestBlackBoxHTTPAdminAndMatchingFeatureMatrix"},
+    {"area": "matching", "feature": "url_path_query_header_jsonpath_absent_equalToJson", "status": "covered", "test": "TestBlackBoxHTTPAdminAndMatchingFeatureMatrix"},
+    {"area": "response", "feature": "status_headers_jsonBody_response_template", "status": "covered", "test": "TestBlackBoxHTTPAdminAndMatchingFeatureMatrix"},
+    {"area": "matching", "feature": "priority_urlPattern_urlPathPattern_any_method", "status": "covered", "test": "TestBlackBoxPriorityPathPatternScenariosAndDelays"},
+    {"area": "response", "feature": "fixedDelay_chunkedDribbleDelay", "status": "covered", "test": "TestBlackBoxPriorityPathPatternScenariosAndDelays"},
+    {"area": "scenarios", "feature": "scenario_state_transition_and_reset", "status": "covered", "test": "TestBlackBoxPriorityPathPatternScenariosAndDelays"},
+    {"area": "file_api", "feature": "legacy_login_tus_upload_bodyFileName_binary", "status": "covered", "test": "TestBlackBoxLegacyFileUploadAndBodyFile"},
+    {"area": "proxy", "feature": "proxyBaseUrl_proxyUrlPrefixToRemove", "status": "covered", "test": "TestBlackBoxProxyAndRecordingWorkflow"},
+    {"area": "recording", "feature": "start_proxy_stop_snapshot_activate_mappings", "status": "covered", "test": "TestBlackBoxProxyAndRecordingWorkflow"},
+    {"area": "grpc", "feature": "descriptor_proto_upload_list_reset_unary_json_matching_response_status", "status": "covered", "test": "TestBlackBoxGRPCDescriptorUploadAndUnaryRuntime"},
+    {"area": "graphql", "feature": "semantic_query_variables_operationName_positive_negative", "status": "covered", "test": "TestBlackBoxGraphQLSemanticMatcher"},
+    {"area": "verification", "feature": "request_journal_admin_verification", "status": "not_applicable", "test": "none", "notes": "current analyzed autotest workflow does not use WireMock verification API; VIMock request journal is not implemented"},
+    {"area": "grpc", "feature": "streaming_reflection_proxy_recording", "status": "known_gap", "test": "none"},
+    {"area": "graphql", "feature": "federation_specific_matching", "status": "known_gap", "test": "none"}
+  ]
+}

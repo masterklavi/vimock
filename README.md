@@ -121,6 +121,7 @@ Tag pushes create GitHub Release assets for Linux and macOS on `amd64` and `arm6
 - URL path regex matcher: `request.urlPathPattern`.
 - WireMock-like 404 response for unmatched requests.
 - Unit, race and contract test quality gate with 90%+ statement coverage.
+- Black-box API autotest suite under `autotest/` with safe skip behavior when no VIMock target is configured.
 
 ## TODO
 
@@ -135,7 +136,6 @@ Tag pushes create GitHub Release assets for Linux and macOS on `amd64` and `arm6
 - gRPC reflection over loaded descriptors.
 - `.proto` source compilation for the gRPC descriptor registry.
 - GraphQL federation-specific matching.
-- Black-box API autotests.
 
 ## Quality Gate
 
@@ -147,6 +147,13 @@ GOCACHE=$(pwd)/.gocache go tool cover -func=coverage.out
 ```
 
 Current statement coverage: `90.3%`.
+
+Black-box API suite:
+
+```bash
+VIMOCK_BASE_URL=http://localhost:8080 go test ./autotest/...
+VIMOCK_AUTOTEST_START=1 go test ./autotest/...
+```
 
 ## Documentation
 
@@ -166,11 +173,12 @@ Current statement coverage: `90.3%`.
 - [Step 14: Recording and snapshotting](docs/step-14-recording-and-snapshotting.md)
 - [Step 15: HTTPS, Docker and performance baseline](docs/step-15-https-docker-kubernetes-performance.md)
 - [Step 16: MVP acceptance and quality gate](docs/step-16-mvp-acceptance.md)
+- [Step 17: Black-box API autotests](docs/step-17-black-box-autotests.md)
 - [MVP compliance report](docs/mvp-compliance-report.md)
 
 ## Scope guardrails
 
-The current implementation is incremental. It includes the service bootstrap, HTTP/HTTPS port configuration, stdout logging, health/readiness endpoints, Admin API CRUD for mappings, basic HTTP stubbing, request matching needed by current mocks, targeted response templating, in-memory body files, proxy fallback, recording/snapshotting, delays, stateful scenarios, runtime-generated mapping lifecycle checks, the legacy file upload workflow used by current autotests, the gRPC descriptor registry foundation, unary gRPC stubbing runtime, GraphQL semantic matching, Docker hardening, performance benchmarks and a 90%+ coverage quality gate.
+The current implementation is incremental. It includes the service bootstrap, HTTP/HTTPS port configuration, stdout logging, health/readiness endpoints, Admin API CRUD for mappings, basic HTTP stubbing, request matching needed by current mocks, targeted response templating, in-memory body files, proxy fallback, recording/snapshotting, delays, stateful scenarios, runtime-generated mapping lifecycle checks, the legacy file upload workflow used by current autotests, the gRPC descriptor registry foundation, unary gRPC stubbing runtime, GraphQL semantic matching, Docker hardening, performance benchmarks, a 90%+ coverage quality gate and black-box API autotests.
 
 Advanced request matching beyond current fixtures, full WireMock response templating, full TUS support, advanced recording modes, advanced gRPC features, and GraphQL federation-specific behavior are intentionally added in separate increments described in `plan.md`.
 
