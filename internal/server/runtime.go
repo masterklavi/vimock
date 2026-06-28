@@ -1,21 +1,27 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
+	"vimock/internal/delay"
 	"vimock/internal/mapping"
 	"vimock/internal/matcher"
+	"vimock/internal/proxy"
 	"vimock/internal/response"
 )
 
 const noMappingsMessage = "No response could be served as there are no stub mappings in this WireMock instance."
 
 type runtimeAPI struct {
-	mappings *mapping.Store
-	renderer response.Renderer
+	mappings  *mapping.Store
+	renderer  response.Renderer
+	forwarder proxy.Forwarder
+	sleeper   delay.Sleeper
 }
 
 func (a runtimeAPI) serveHTTP(w http.ResponseWriter, r *http.Request) {
@@ -37,13 +43,28 @@ func (a runtimeAPI) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rendered, err := a.renderer.Render(stub.Response(), bodyContext)
+	responseDefinition := stub.Response()
+	if err := a.sleep(r.Context(), delay.InitialDuration(responseDefinition, nil)); err != nil {
+		return
+	}
+
+	if responseDefinition.ProxyBaseURL != "" {
+		proxied, err := a.forwarder.Forward(r.Context(), r, body, responseDefinition)
+		if err != nil {
+			writeProxyError(w, err)
+			return
+		}
+		writeProxyResponse(w, r, proxied, responseDefinition, a.sleep)
+		return
+	}
+
+	rendered, err := a.renderer.Render(responseDefinition, bodyContext)
 	if err != nil {
 		writeResponseRenderError(w, err)
 		return
 	}
 
-	writeStubResponse(w, rendered)
+	writeStubResponse(w, r, rendered, responseDefinition, a.sleep)
 }
 
 func (a runtimeAPI) findMatch(r *http.Request, body *matcher.BodyContext) (mapping.Mapping, bool) {
@@ -95,20 +116,92 @@ func writeResponseRenderError(w http.ResponseWriter, err error) {
 	http.Error(w, err.Error(), http.StatusInternalServerError)
 }
 
-func writeStubResponse(w http.ResponseWriter, response response.Rendered) {
-	for name, values := range response.Headers {
+func writeProxyError(w http.ResponseWriter, err error) {
+	http.Error(w, err.Error(), http.StatusBadGateway)
+}
+
+func writeStubResponse(w http.ResponseWriter, r *http.Request, rendered response.Rendered, definition mapping.ResponseDefinition, sleeper delay.Sleeper) {
+	for name, values := range rendered.Headers {
 		for _, value := range values {
 			w.Header().Add(name, value)
 		}
 	}
-	if response.JSON && w.Header().Get("Content-Type") == "" {
+	if rendered.JSON && w.Header().Get("Content-Type") == "" {
 		w.Header().Set("Content-Type", "application/json")
 	}
 
-	w.WriteHeader(response.Status)
-	if len(response.Body) > 0 {
-		_, _ = w.Write(response.Body)
+	w.WriteHeader(rendered.Status)
+	_ = writeResponseBody(r, w, rendered.Body, definition, sleeper)
+}
+
+func writeProxyResponse(w http.ResponseWriter, r *http.Request, proxied proxy.Response, definition mapping.ResponseDefinition, sleeper delay.Sleeper) {
+	for name, values := range proxied.Headers {
+		for _, value := range values {
+			w.Header().Add(name, value)
+		}
 	}
+	if definition.ChunkedDribbleDelay != nil {
+		w.Header().Del("Content-Length")
+	}
+	w.WriteHeader(proxied.Status)
+	_ = writeResponseBody(r, w, proxied.Body, definition, sleeper)
+}
+
+func writeResponseBody(r *http.Request, w http.ResponseWriter, body []byte, definition mapping.ResponseDefinition, sleeper delay.Sleeper) error {
+	if len(body) == 0 {
+		return nil
+	}
+
+	chunks, interval := delay.ChunkedInterval(definition)
+	if chunks <= 1 || len(body) == 1 {
+		_, err := w.Write(body)
+		return err
+	}
+
+	parts := splitBody(body, chunks)
+	for index, chunk := range parts {
+		if len(chunk) == 0 {
+			continue
+		}
+		if _, err := w.Write(chunk); err != nil {
+			return err
+		}
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+		}
+		if index < len(parts)-1 {
+			if err := sleeper(r.Context(), interval); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func splitBody(body []byte, chunks int) [][]byte {
+	if chunks <= 1 || chunks >= len(body) {
+		result := make([][]byte, 0, len(body))
+		for index := range body {
+			result = append(result, body[index:index+1])
+		}
+		return result
+	}
+
+	result := make([][]byte, 0, chunks)
+	for index := 0; index < chunks; index++ {
+		start := index * len(body) / chunks
+		end := (index + 1) * len(body) / chunks
+		result = append(result, body[start:end])
+	}
+	return result
+}
+
+func (a runtimeAPI) sleep(ctx context.Context, duration time.Duration) error {
+	sleeper := a.sleeper
+	if sleeper == nil {
+		sleeper = delay.Sleep
+	}
+	return sleeper(ctx, duration)
 }
 
 func isAdminPath(path string) bool {

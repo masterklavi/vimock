@@ -274,7 +274,7 @@ curl -i http://localhost:8080/some/path
 Known gaps:
 - Body/query/header matchers не реализованы, это scope шага 4.
 - `response-template`, request-based response values и body files не реализованы, это scope шага 5.
-- `response.proxyBaseUrl` пока не выполняет upstream proxying; на этом шаге покрыт только fallback selection по priority, само proxying будет добавлено на отдельном шаге.
+- `response.proxyBaseUrl` на этом шаге еще не выполнял upstream proxying; закрыто на шаге 8.
 - WireMock near-miss diff для unmatched request пока не реализован; возвращается простой WireMock-like 404.
 - Общий coverage пока 71.3%; требование 90% остается финальным quality gate.
 
@@ -629,7 +629,7 @@ go test ./...
 - ACC-001, ACC-002, ACC-003, ACC-004, RT-004, TEST-003.
 
 Known gaps:
-- Runtime behavior для `response.proxyBaseUrl` и `response.proxyUrlPrefixToRemove` не реализован, это scope шага 8.
+- Runtime behavior для `response.proxyBaseUrl` и `response.proxyUrlPrefixToRemove` закрыт на шаге 8.
 - Scenario state fields `scenarioName`, `requiredScenarioState`, `newScenarioState` сохраняются, но runtime scenario engine не реализован.
 - Постоянный regression suite на временные fixture-папки намеренно не добавлен.
 - Общий coverage 75.9%; требование 90% остается финальным quality gate.
@@ -662,20 +662,71 @@ Known gaps:
 
 ```bash
 go test ./...
-go test ./internal/proxy ./internal/response -run 'TestProxy|TestDelay'
+go test ./internal/proxy ./internal/delay ./internal/server -run 'TestProxy|TestDelay|TestRuntimeProxies|TestRuntimeAppliesFixedDelay'
 ```
 
 Отчет ИИ по шагу 8:
 
 ```text
-Статус: TODO
+Статус: DONE
+
 Сделано:
+- Добавлены typed response fields для `proxyBaseUrl`, `proxyUrlPrefixToRemove`, `fixedDelayMilliseconds`, `delayDistribution`, `chunkedDribbleDelay`.
+- Добавлен пакет `internal/proxy` для построения upstream URL, prefix removal, forwarding request body/headers и чтения upstream response.
+- Proxy удаляет hop-by-hop headers и возвращает upstream status/headers/body.
+- Runtime теперь после priority selection выполняет proxy forwarding, если у выбранного stub есть `response.proxyBaseUrl`.
+- Добавлен пакет `internal/delay` для fixed delay, uniform/lognormal delay distribution и chunked dribble interval.
+- Runtime применяет initial delay перед обычным response или proxy response.
+- Runtime пишет body chunks с задержкой для `chunkedDribbleDelay` и flush после каждого chunk, если writer поддерживает flush.
+- Добавлены tests на proxy URL rewriting, request forwarding, invalid proxy base URL.
+- Добавлены tests на fixed/uniform/lognormal delay calculation, chunked interval и context cancellation.
+- Добавлены runtime tests на proxy fallback после priority selection и fixed delay + chunked dribble без реального sleep.
+- Обновлены README и docs по шагу 8.
+
 Измененные файлы:
+- `internal/mapping/model.go`
+- `internal/mapping/model_test.go`
+- `internal/delay/delay.go`
+- `internal/delay/delay_test.go`
+- `internal/proxy/proxy.go`
+- `internal/proxy/proxy_test.go`
+- `internal/server/server.go`
+- `internal/server/runtime.go`
+- `internal/server/runtime_test.go`
+- `README.md`
+- `docs/README.md`
+- `docs/step-08-proxy-and-delays.md`
+- `plan.md`
+
 Как запускать:
+- `go run ./cmd/vimock`
+- Загрузить mapping с `response.proxyBaseUrl` и `response.proxyUrlPrefixToRemove`, затем выполнить matching request.
+- Загрузить mapping с `fixedDelayMilliseconds`, `delayDistribution` или `chunkedDribbleDelay`, затем выполнить matching request.
+- `go test ./internal/proxy ./internal/delay ./internal/server -run 'TestProxy|TestDelay|TestRuntimeProxies|TestRuntimeAppliesFixedDelay'`
+- `go test ./...`
+- `go test -race ./...`
+
 Проверки и результаты:
+- `go test ./internal/delay ./internal/proxy ./internal/mapping ./internal/server -run 'TestInitialDuration|TestChunked|TestSleep|TestProxy|TestTargetURL|TestParseJSONResponseProxyAndDelays|TestRuntimeProxies|TestRuntimeAppliesFixedDelay'` - успешно.
+- `go test ./...` - успешно.
+- `go test -race ./...` - успешно.
+- `go test -coverprofile=coverage.out ./...` - успешно, total coverage 72.8%.
+- `docker build -t vimock:dev .` - успешно.
+
 Покрытые требования:
+- PROXY-001, PROXY-002, PROXY-003, RESP-012.
+
 Known gaps:
+- Proxy recording generated mappings не реализован, это scope шага 14.
+- Proxy streaming не реализован: response body читается целиком в память перед отдачей клиенту.
+- Full WireMock delay edge cases не покрыты: реализованы основные `fixedDelayMilliseconds`, `uniform`, `lognormal`, `chunkedDribbleDelay`.
+- Общий coverage 72.8%; требование 90% остается финальным quality gate.
+
 Риски/решения:
+- Proxy выполняется только после выбора stub по priority/insertion order, поэтому fallback mapping не перехватывает более приоритетные stubs.
+- Для тестов proxy используется fake `http.RoundTripper`, а не `httptest.NewServer`, чтобы тесты работали в sandbox без bind/listen permissions.
+- Delay sleep в runtime инъектируется через `delay.Sleeper`, поэтому runtime tests проверяют delay contract без реального ожидания.
+- Chunked dribble использует flush best-effort: если writer не поддерживает `http.Flusher`, chunks всё равно пишутся с задержкой, но фактическая доставка зависит от HTTP stack.
 ```
 
 ## Шаг 9. Stateful scenarios

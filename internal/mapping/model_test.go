@@ -85,6 +85,50 @@ func TestParseJSONWithIDOverridesBodyID(t *testing.T) {
 	}
 }
 
+func TestParseJSONResponseProxyAndDelays(t *testing.T) {
+	stub, err := ParseJSON([]byte(`{
+	  "request": {
+	    "method": "ANY",
+	    "urlPattern": "/proxy/.*"
+	  },
+	  "response": {
+	    "status": 200,
+	    "proxyBaseUrl": "https://example.com/base",
+	    "proxyUrlPrefixToRemove": "/proxy",
+	    "fixedDelayMilliseconds": 25,
+	    "delayDistribution": {
+	      "type": "uniform",
+	      "lower": 10,
+	      "upper": 20
+	    },
+	    "chunkedDribbleDelay": {
+	      "numberOfChunks": 3,
+	      "totalDuration": 30
+	    }
+	  }
+	}`))
+	if err != nil {
+		t.Fatalf("ParseJSON() error = %v", err)
+	}
+
+	response := stub.Response()
+	if response.ProxyBaseURL != "https://example.com/base" {
+		t.Fatalf("ProxyBaseURL = %q, want https://example.com/base", response.ProxyBaseURL)
+	}
+	if response.ProxyURLPrefixToRemove != "/proxy" {
+		t.Fatalf("ProxyURLPrefixToRemove = %q, want /proxy", response.ProxyURLPrefixToRemove)
+	}
+	if response.FixedDelayMilliseconds != 25 {
+		t.Fatalf("FixedDelayMilliseconds = %d, want 25", response.FixedDelayMilliseconds)
+	}
+	if response.DelayDistribution == nil || response.DelayDistribution.Type != "uniform" || response.DelayDistribution.Lower != 10 || response.DelayDistribution.Upper != 20 {
+		t.Fatalf("DelayDistribution = %+v, want uniform 10..20", response.DelayDistribution)
+	}
+	if response.ChunkedDribbleDelay == nil || response.ChunkedDribbleDelay.NumberOfChunks != 3 || response.ChunkedDribbleDelay.TotalDurationMilliseconds != 30 {
+		t.Fatalf("ChunkedDribbleDelay = %+v, want 3 chunks over 30ms", response.ChunkedDribbleDelay)
+	}
+}
+
 func TestParseJSONRejectsInvalidMapping(t *testing.T) {
 	tests := []struct {
 		name    string

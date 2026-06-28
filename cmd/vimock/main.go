@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -14,6 +15,8 @@ import (
 	"vimock/internal/server"
 )
 
+var version = "dev"
+
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
@@ -23,6 +26,10 @@ func main() {
 	if err != nil {
 		logger.Error("invalid config", "error", err)
 		os.Exit(2)
+	}
+	if cfg.Version {
+		fmt.Printf("vimock %s\n", version)
+		return
 	}
 
 	httpServer := &http.Server{

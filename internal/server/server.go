@@ -8,6 +8,7 @@ import (
 
 	"vimock/internal/files"
 	"vimock/internal/mapping"
+	"vimock/internal/proxy"
 	"vimock/internal/response"
 )
 
@@ -41,6 +42,9 @@ func NewHandlerWithStores(logger *slog.Logger, mappings *mapping.Store, fileStor
 	runtime := runtimeAPI{
 		mappings: mappings,
 		renderer: response.NewRenderer(fileStore),
+		forwarder: proxy.NewForwarder(&http.Client{
+			Timeout: 30 * time.Second,
+		}),
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /__admin/health", healthHandler)

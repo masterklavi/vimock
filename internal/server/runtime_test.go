@@ -2,15 +2,19 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"vimock/internal/files"
 	"vimock/internal/mapping"
+	"vimock/internal/proxy"
+	"vimock/internal/response"
 )
 
 func TestRuntimeServesBodyForURLMatch(t *testing.T) {
@@ -367,6 +371,145 @@ func TestRuntimeServesBodyFileBytes(t *testing.T) {
 	}
 }
 
+func TestRuntimeProxiesFallbackAfterPrioritySelection(t *testing.T) {
+	var upstreamRequests int
+	store := mapping.NewStore()
+	createStoreMapping(t, store, `{
+	  "priority": 10,
+	  "request": {
+	    "method": "ANY",
+	    "urlPattern": "/proxy/.*"
+	  },
+	  "response": {
+	    "proxyBaseUrl": "http://upstream.local",
+	    "proxyUrlPrefixToRemove": "/proxy"
+	  }
+	}`)
+	createStoreMapping(t, store, `{
+	  "priority": 1,
+	  "request": {
+	    "method": "POST",
+	    "urlPath": "/proxy/local"
+	  },
+	  "response": {
+	    "status": 200,
+	    "body": "local"
+	  }
+	}`)
+
+	runtime := runtimeAPI{
+		mappings: store,
+		renderer: response.NewRenderer(nil),
+		forwarder: proxy.NewForwarder(&http.Client{
+			Transport: serverRoundTripFunc(func(r *http.Request) (*http.Response, error) {
+				upstreamRequests++
+				body, err := io.ReadAll(r.Body)
+				if err != nil {
+					t.Fatalf("read upstream body: %v", err)
+				}
+				return &http.Response{
+					StatusCode: http.StatusAccepted,
+					Header: http.Header{
+						"X-Upstream": []string{"ok"},
+					},
+					Body: io.NopCloser(strings.NewReader(r.Method + " " + r.URL.RequestURI() + " " + string(body) + " " + r.Header.Get("X-Smoke"))),
+				}, nil
+			}),
+		}),
+	}
+
+	local := requestRuntimeWithBody(t, runtime, http.MethodPost, "/proxy/local", "ignored")
+	if local.Code != http.StatusOK {
+		t.Fatalf("local status = %d, want %d", local.Code, http.StatusOK)
+	}
+	if local.Body.String() != "local" {
+		t.Fatalf("local body = %q, want local", local.Body.String())
+	}
+	if upstreamRequests != 0 {
+		t.Fatalf("upstreamRequests = %d, want 0 for higher priority local stub", upstreamRequests)
+	}
+
+	proxied := requestRuntimeWithHeadersAndBody(
+		t,
+		runtime,
+		http.MethodPost,
+		"/proxy/upstream?debug=true",
+		map[string]string{"X-Smoke": "yes"},
+		"payload",
+	)
+	if proxied.Code != http.StatusAccepted {
+		t.Fatalf("proxied status = %d, want %d: %s", proxied.Code, http.StatusAccepted, proxied.Body.String())
+	}
+	if got := proxied.Header().Get("X-Upstream"); got != "ok" {
+		t.Fatalf("X-Upstream = %q, want ok", got)
+	}
+	if got := proxied.Body.String(); got != "POST /upstream?debug=true payload yes" {
+		t.Fatalf("proxied body = %q, want upstream echo", got)
+	}
+	if upstreamRequests != 1 {
+		t.Fatalf("upstreamRequests = %d, want 1", upstreamRequests)
+	}
+}
+
+type serverRoundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f serverRoundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
+	return f(r)
+}
+
+func TestRuntimeAppliesFixedDelayAndChunkedDribble(t *testing.T) {
+	store := mapping.NewStore()
+	stub, err := mapping.ParseJSON([]byte(`{
+	  "request": {
+	    "method": "GET",
+	    "urlPath": "/delayed"
+	  },
+	  "response": {
+	    "status": 200,
+	    "body": "abcdef",
+	    "fixedDelayMilliseconds": 25,
+	    "chunkedDribbleDelay": {
+	      "numberOfChunks": 3,
+	      "totalDuration": 30
+	    }
+	  }
+	}`))
+	if err != nil {
+		t.Fatalf("parse mapping: %v", err)
+	}
+	store.Create(stub)
+
+	var sleeps []time.Duration
+	runtime := runtimeAPI{
+		mappings: store,
+		renderer: response.NewRenderer(nil),
+		sleeper: func(_ context.Context, duration time.Duration) error {
+			sleeps = append(sleeps, duration)
+			return nil
+		},
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/delayed", nil)
+	resp := httptest.NewRecorder()
+	runtime.serveHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", resp.Code, http.StatusOK)
+	}
+	if resp.Body.String() != "abcdef" {
+		t.Fatalf("body = %q, want abcdef", resp.Body.String())
+	}
+	wantSleeps := []time.Duration{25 * time.Millisecond, 15 * time.Millisecond, 15 * time.Millisecond}
+	if len(sleeps) != len(wantSleeps) {
+		t.Fatalf("sleeps = %v, want %v", sleeps, wantSleeps)
+	}
+	for index, want := range wantSleeps {
+		if sleeps[index] != want {
+			t.Fatalf("sleeps[%d] = %s, want %s", index, sleeps[index], want)
+		}
+	}
+}
+
 func TestRuntimeNoMappingsReturnsWireMockLikeNotFound(t *testing.T) {
 	handler := newTestHandler()
 
@@ -395,6 +538,39 @@ func createMapping(t *testing.T, handler http.Handler, body string) string {
 		t.Fatalf("created id = %v, want non-empty string", created["id"])
 	}
 	return id
+}
+
+func createStoreMapping(t *testing.T, store *mapping.Store, body string) {
+	t.Helper()
+
+	stub, err := mapping.ParseJSON([]byte(body))
+	if err != nil {
+		t.Fatalf("parse mapping: %v", err)
+	}
+	store.Create(stub)
+}
+
+func requestRuntimeWithBody(t *testing.T, runtime runtimeAPI, method, path, body string) *httptest.ResponseRecorder {
+	t.Helper()
+
+	return requestRuntimeWithHeadersAndBody(t, runtime, method, path, nil, body)
+}
+
+func requestRuntimeWithHeadersAndBody(t *testing.T, runtime runtimeAPI, method, path string, headers map[string]string, body string) *httptest.ResponseRecorder {
+	t.Helper()
+
+	var reader io.Reader
+	if body != "" {
+		reader = bytes.NewBufferString(body)
+	}
+	req := httptest.NewRequest(method, path, reader)
+	for name, value := range headers {
+		req.Header.Set(name, value)
+	}
+
+	resp := httptest.NewRecorder()
+	runtime.serveHTTP(resp, req)
+	return resp
 }
 
 func requestWithHeadersAndBody(t *testing.T, handler http.Handler, method, path string, headers map[string]string, body string) *httptest.ResponseRecorder {

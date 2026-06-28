@@ -17,8 +17,9 @@ const (
 
 // Config contains the process-level settings needed by the bootstrap server.
 type Config struct {
-	Host string
-	Port int
+	Host    string
+	Port    int
+	Version bool
 }
 
 func (c Config) Addr() string {
@@ -45,6 +46,7 @@ func load(args []string, getenv func(string) string, output io.Writer) (Config, 
 	fs.SetOutput(output)
 	fs.StringVar(&cfg.Host, "host", cfg.Host, "bind host, overrides VIMOCK_HOST")
 	fs.IntVar(&cfg.Port, "port", cfg.Port, "bind port, overrides VIMOCK_PORT")
+	fs.BoolVar(&cfg.Version, "version", false, "print version and exit")
 	if err := fs.Parse(args); err != nil {
 		return Config{}, err
 	}

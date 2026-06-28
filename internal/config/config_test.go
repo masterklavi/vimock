@@ -44,6 +44,16 @@ func TestLoadRejectsInvalidPort(t *testing.T) {
 	}
 }
 
+func TestLoadVersionFlag(t *testing.T) {
+	cfg, err := load([]string{"--version"}, func(string) string { return "" }, nil)
+	if err != nil {
+		t.Fatalf("load version flag: %v", err)
+	}
+	if !cfg.Version {
+		t.Fatalf("version = false, want true")
+	}
+}
+
 func TestAddr(t *testing.T) {
 	cfg := Config{Host: "127.0.0.1", Port: 8080}
 	if got := cfg.Addr(); got != "127.0.0.1:8080" {

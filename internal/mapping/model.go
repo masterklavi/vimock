@@ -39,12 +39,30 @@ type RequestPattern struct {
 }
 
 type ResponseDefinition struct {
-	Status       int
-	Headers      map[string][]string
-	Body         []byte
-	JSON         bool
-	BodyFile     string
-	Transformers []string
+	Status                 int
+	Headers                map[string][]string
+	Body                   []byte
+	JSON                   bool
+	BodyFile               string
+	Transformers           []string
+	ProxyBaseURL           string
+	ProxyURLPrefixToRemove string
+	FixedDelayMilliseconds int
+	DelayDistribution      *DelayDistribution
+	ChunkedDribbleDelay    *ChunkedDribbleDelay
+}
+
+type DelayDistribution struct {
+	Type   string
+	Lower  int
+	Upper  int
+	Median int
+	Sigma  float64
+}
+
+type ChunkedDribbleDelay struct {
+	NumberOfChunks            int
+	TotalDurationMilliseconds int
 }
 
 func ParseJSON(data []byte) (Mapping, error) {
@@ -150,12 +168,17 @@ func (m Mapping) Request() RequestPattern {
 
 func (m Mapping) Response() ResponseDefinition {
 	return ResponseDefinition{
-		Status:       m.response.Status,
-		Headers:      cloneHeaders(m.response.Headers),
-		Body:         cloneBytes(m.response.Body),
-		JSON:         m.response.JSON,
-		BodyFile:     m.response.BodyFile,
-		Transformers: append([]string(nil), m.response.Transformers...),
+		Status:                 m.response.Status,
+		Headers:                cloneHeaders(m.response.Headers),
+		Body:                   cloneBytes(m.response.Body),
+		JSON:                   m.response.JSON,
+		BodyFile:               m.response.BodyFile,
+		Transformers:           append([]string(nil), m.response.Transformers...),
+		ProxyBaseURL:           m.response.ProxyBaseURL,
+		ProxyURLPrefixToRemove: m.response.ProxyURLPrefixToRemove,
+		FixedDelayMilliseconds: m.response.FixedDelayMilliseconds,
+		DelayDistribution:      cloneDelayDistribution(m.response.DelayDistribution),
+		ChunkedDribbleDelay:    cloneChunkedDribbleDelay(m.response.ChunkedDribbleDelay),
 	}
 }
 
@@ -235,6 +258,19 @@ func intField(raw map[string]json.RawMessage, field string, fallback int) (int, 
 	var parsed int
 	if err := json.Unmarshal(value, &parsed); err != nil {
 		return 0, fmt.Errorf("%s must be an integer", field)
+	}
+	return parsed, nil
+}
+
+func floatField(raw map[string]json.RawMessage, field string, fallback float64) (float64, error) {
+	value, ok := raw[field]
+	if !ok || len(value) == 0 || bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+		return fallback, nil
+	}
+
+	var parsed float64
+	if err := json.Unmarshal(value, &parsed); err != nil {
+		return 0, fmt.Errorf("%s must be a number", field)
 	}
 	return parsed, nil
 }
@@ -408,14 +444,42 @@ func parseResponse(raw json.RawMessage) (ResponseDefinition, error) {
 	if err != nil {
 		return ResponseDefinition{}, err
 	}
+	proxyBaseURL, err := stringField(object, "proxyBaseUrl")
+	if err != nil {
+		return ResponseDefinition{}, err
+	}
+	proxyURLPrefixToRemove, err := stringField(object, "proxyUrlPrefixToRemove")
+	if err != nil {
+		return ResponseDefinition{}, err
+	}
+	fixedDelayMilliseconds, err := intField(object, "fixedDelayMilliseconds", 0)
+	if err != nil {
+		return ResponseDefinition{}, err
+	}
+	if fixedDelayMilliseconds < 0 {
+		return ResponseDefinition{}, fmt.Errorf("response.fixedDelayMilliseconds must be non-negative")
+	}
+	delayDistribution, err := parseDelayDistribution(object["delayDistribution"])
+	if err != nil {
+		return ResponseDefinition{}, err
+	}
+	chunkedDribbleDelay, err := parseChunkedDribbleDelay(object["chunkedDribbleDelay"])
+	if err != nil {
+		return ResponseDefinition{}, err
+	}
 
 	return ResponseDefinition{
-		Status:       status,
-		Headers:      headers,
-		Body:         body,
-		JSON:         isJSON,
-		BodyFile:     bodyFile,
-		Transformers: transformers,
+		Status:                 status,
+		Headers:                headers,
+		Body:                   body,
+		JSON:                   isJSON,
+		BodyFile:               bodyFile,
+		Transformers:           transformers,
+		ProxyBaseURL:           proxyBaseURL,
+		ProxyURLPrefixToRemove: proxyURLPrefixToRemove,
+		FixedDelayMilliseconds: fixedDelayMilliseconds,
+		DelayDistribution:      delayDistribution,
+		ChunkedDribbleDelay:    chunkedDribbleDelay,
 	}, nil
 }
 
@@ -478,6 +542,101 @@ func parseStringArrayField(raw map[string]json.RawMessage, field string) ([]stri
 		return nil, fmt.Errorf("%s must be a string array", field)
 	}
 	return parsed, nil
+}
+
+func parseDelayDistribution(raw json.RawMessage) (*DelayDistribution, error) {
+	if len(raw) == 0 || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return nil, nil
+	}
+
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &object); err != nil || object == nil {
+		return nil, fmt.Errorf("response.delayDistribution must be a JSON object")
+	}
+
+	distributionType, err := stringField(object, "type")
+	if err != nil {
+		return nil, err
+	}
+	if distributionType == "" {
+		return nil, fmt.Errorf("response.delayDistribution.type is required")
+	}
+
+	distribution := &DelayDistribution{Type: distributionType}
+	switch distributionType {
+	case "uniform":
+		distribution.Lower, err = intField(object, "lower", 0)
+		if err != nil {
+			return nil, err
+		}
+		distribution.Upper, err = intField(object, "upper", 0)
+		if err != nil {
+			return nil, err
+		}
+		if distribution.Lower < 0 || distribution.Upper < distribution.Lower {
+			return nil, fmt.Errorf("response.delayDistribution uniform bounds are invalid")
+		}
+	case "lognormal":
+		distribution.Median, err = intField(object, "median", 0)
+		if err != nil {
+			return nil, err
+		}
+		distribution.Sigma, err = floatField(object, "sigma", 0)
+		if err != nil {
+			return nil, err
+		}
+		if distribution.Median <= 0 || distribution.Sigma < 0 {
+			return nil, fmt.Errorf("response.delayDistribution lognormal parameters are invalid")
+		}
+	default:
+		return nil, fmt.Errorf("response.delayDistribution.type %q is not supported", distributionType)
+	}
+
+	return distribution, nil
+}
+
+func parseChunkedDribbleDelay(raw json.RawMessage) (*ChunkedDribbleDelay, error) {
+	if len(raw) == 0 || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return nil, nil
+	}
+
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &object); err != nil || object == nil {
+		return nil, fmt.Errorf("response.chunkedDribbleDelay must be a JSON object")
+	}
+
+	numberOfChunks, err := intField(object, "numberOfChunks", 0)
+	if err != nil {
+		return nil, err
+	}
+	totalDuration, err := intField(object, "totalDuration", 0)
+	if err != nil {
+		return nil, err
+	}
+	if numberOfChunks <= 0 || totalDuration < 0 {
+		return nil, fmt.Errorf("response.chunkedDribbleDelay parameters are invalid")
+	}
+
+	return &ChunkedDribbleDelay{
+		NumberOfChunks:            numberOfChunks,
+		TotalDurationMilliseconds: totalDuration,
+	}, nil
+}
+
+func cloneDelayDistribution(source *DelayDistribution) *DelayDistribution {
+	if source == nil {
+		return nil
+	}
+	clone := *source
+	return &clone
+}
+
+func cloneChunkedDribbleDelay(source *ChunkedDribbleDelay) *ChunkedDribbleDelay {
+	if source == nil {
+		return nil
+	}
+	clone := *source
+	return &clone
 }
 
 func cloneRawMap(source map[string]json.RawMessage) map[string]json.RawMessage {

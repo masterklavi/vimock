@@ -10,6 +10,12 @@ go run ./cmd/vimock
 
 By default, the service listens on `0.0.0.0:8080`.
 
+Version:
+
+```bash
+vimock --version
+```
+
 Configuration:
 
 - `--host` or `VIMOCK_HOST`
@@ -28,6 +34,15 @@ Docker:
 docker build -t vimock:dev .
 docker run --rm -p 8080:8080 vimock:dev
 ```
+
+Release:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+Tag pushes create GitHub Release assets for Linux and macOS on `amd64` and `arm64`.
 
 ## Available Functionality
 
@@ -61,6 +76,9 @@ docker run --rm -p 8080:8080 vimock:dev
 - Response template helper: `{{jsonPath request.body '...'}}`.
 - JSON-RPC-style request id echo through response templating.
 - Binary response body files are returned without text recoding.
+- Proxy mappings via `response.proxyBaseUrl`.
+- Proxy prefix rewriting via `response.proxyUrlPrefixToRemove`.
+- Response delays: `fixedDelayMilliseconds`, `delayDistribution`, `chunkedDribbleDelay`.
 - Legacy file auth endpoint: `POST /api/login`.
 - Legacy file upload create endpoint: `POST /api/tus/{file}?override=true`.
 - Legacy file upload bytes endpoint: `PATCH /api/tus/{file}?override=true`.
@@ -75,8 +93,6 @@ docker run --rm -p 8080:8080 vimock:dev
 - Full WireMock/Handlebars response template compatibility beyond `jsonPath request.body`.
 - Full TUS protocol beyond the current autotest upload workflow.
 - Static or persistent body file storage.
-- Delays.
-- Proxying via `response.proxyBaseUrl`.
 - Recording and snapshotting.
 - Scenario state.
 - Native gRPC descriptor Admin API and gRPC stubbing.
@@ -93,12 +109,13 @@ docker run --rm -p 8080:8080 vimock:dev
 - [Step 4: Request matching](docs/step-04-request-matching.md)
 - [Step 5: Response templating and body files](docs/step-05-response-templating-and-body-files.md)
 - [Step 6: Legacy File API](docs/step-06-legacy-file-api.md)
+- [Step 8: Proxy and delays](docs/step-08-proxy-and-delays.md)
 
 ## Scope guardrails
 
-The current implementation is incremental. It includes the service bootstrap, port configuration, stdout logging, health/readiness endpoints, Admin API CRUD for mappings, basic HTTP stubbing, request matching needed by current mocks, targeted response templating, in-memory body files, and the legacy file upload workflow used by current autotests.
+The current implementation is incremental. It includes the service bootstrap, port configuration, stdout logging, health/readiness endpoints, Admin API CRUD for mappings, basic HTTP stubbing, request matching needed by current mocks, targeted response templating, in-memory body files, proxy fallback, delays, and the legacy file upload workflow used by current autotests.
 
-Advanced request matching beyond current fixtures, full WireMock response templating, full TUS support, proxying, recording, gRPC, and GraphQL are intentionally added in separate increments described in `plan.md`.
+Advanced request matching beyond current fixtures, full WireMock response templating, full TUS support, recording, gRPC, and GraphQL are intentionally added in separate increments described in `plan.md`.
 
 ## License
 
