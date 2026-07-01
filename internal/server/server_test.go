@@ -1,11 +1,13 @@
 package server
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -52,6 +54,52 @@ func TestUnsupportedRouteReturnsNotFound(t *testing.T) {
 	}
 }
 
+func TestLoggingMiddlewareIncludesRequestBody(t *testing.T) {
+	var logOutput bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logOutput, nil))
+	handler := loggingMiddleware(logger, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read request body: %v", err)
+		}
+		if string(body) != `{"id":"req-1"}` {
+			t.Fatalf("handler body = %q, want request body", body)
+		}
+		w.WriteHeader(http.StatusAccepted)
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "/rpc", strings.NewReader(`{"id":"req-1"}`))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	handler.ServeHTTP(resp, req)
+
+	logRecord := decodeLogRecord(t, logOutput.Bytes())
+	if logRecord["request_body"] != `{"id":"req-1"}` {
+		t.Fatalf("logged request_body = %v, want request body", logRecord["request_body"])
+	}
+	if logRecord["status"] != float64(http.StatusAccepted) {
+		t.Fatalf("logged status = %v, want %d", logRecord["status"], http.StatusAccepted)
+	}
+}
+
+func TestLoggingMiddlewareSamplesUnreadRequestBody(t *testing.T) {
+	var logOutput bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logOutput, nil))
+	handler := loggingMiddleware(logger, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "/unmatched", strings.NewReader(`{"method":"rests.get"}`))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	handler.ServeHTTP(resp, req)
+
+	logRecord := decodeLogRecord(t, logOutput.Bytes())
+	if logRecord["request_body"] != `{"method":"rests.get"}` {
+		t.Fatalf("logged request_body = %v, want unread request body", logRecord["request_body"])
+	}
+}
+
 func request(t *testing.T, method, path string) *httptest.ResponseRecorder {
 	t.Helper()
 
@@ -60,4 +108,14 @@ func request(t *testing.T, method, path string) *httptest.ResponseRecorder {
 	resp := httptest.NewRecorder()
 	handler.ServeHTTP(resp, req)
 	return resp
+}
+
+func decodeLogRecord(t *testing.T, data []byte) map[string]any {
+	t.Helper()
+
+	var record map[string]any
+	if err := json.Unmarshal(data, &record); err != nil {
+		t.Fatalf("decode log record: %v\n%s", err, data)
+	}
+	return record
 }

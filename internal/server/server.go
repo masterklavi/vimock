@@ -1,10 +1,14 @@
 package server
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"vimock/internal/files"
 	"vimock/internal/grpcdesc"
@@ -139,15 +143,133 @@ func loggingMiddleware(logger *slog.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		recorder := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		bodyCapture := wrapRequestBodyForLogging(r)
 
 		next.ServeHTTP(recorder, r)
 
-		logger.Info(
-			"http request",
+		attrs := []any{
 			"method", r.Method,
 			"path", r.URL.Path,
 			"status", recorder.status,
 			"duration_ms", time.Since(start).Milliseconds(),
-		)
+		}
+		if bodyCapture != nil {
+			bodyCapture.ensureSample()
+			attrs = append(attrs, bodyCapture.logAttrs(r.Header.Get("Content-Type"))...)
+		}
+
+		logger.Info("http request", attrs...)
 	})
+}
+
+const maxLoggedRequestBodySize = 64 << 10
+
+type requestBodyLogCapture struct {
+	body      io.ReadCloser
+	buffer    bytes.Buffer
+	truncated bool
+	readErr   error
+}
+
+func wrapRequestBodyForLogging(r *http.Request) *requestBodyLogCapture {
+	if r.Body == nil || r.Body == http.NoBody {
+		return nil
+	}
+
+	capture := &requestBodyLogCapture{body: r.Body}
+	r.Body = capture
+	return capture
+}
+
+func (c *requestBodyLogCapture) Read(p []byte) (int, error) {
+	n, err := c.body.Read(p)
+	if n > 0 {
+		c.capture(p[:n])
+	}
+	if err != nil && err != io.EOF {
+		c.readErr = err
+	}
+	return n, err
+}
+
+func (c *requestBodyLogCapture) Close() error {
+	return c.body.Close()
+}
+
+func (c *requestBodyLogCapture) ensureSample() {
+	if c == nil || c.truncated {
+		return
+	}
+
+	buffer := make([]byte, 8<<10)
+	for c.buffer.Len() < maxLoggedRequestBodySize {
+		n, err := c.body.Read(buffer)
+		if n > 0 {
+			c.capture(buffer[:n])
+		}
+		if err != nil {
+			if err != io.EOF {
+				c.readErr = err
+			}
+			return
+		}
+		if n == 0 {
+			return
+		}
+	}
+}
+
+func (c *requestBodyLogCapture) capture(chunk []byte) {
+	remaining := maxLoggedRequestBodySize - c.buffer.Len()
+	if remaining <= 0 {
+		c.truncated = true
+		return
+	}
+	if len(chunk) > remaining {
+		_, _ = c.buffer.Write(chunk[:remaining])
+		c.truncated = true
+		return
+	}
+	_, _ = c.buffer.Write(chunk)
+}
+
+func (c *requestBodyLogCapture) logAttrs(contentType string) []any {
+	if c == nil {
+		return nil
+	}
+
+	attrs := make([]any, 0, 8)
+	if c.readErr != nil {
+		attrs = append(attrs, "request_body_read_error", c.readErr.Error())
+	}
+	if c.buffer.Len() == 0 {
+		return attrs
+	}
+
+	body := c.buffer.Bytes()
+	attrs = append(attrs, "request_body_truncated", c.truncated)
+	if isTextLogBody(body, contentType) {
+		attrs = append(attrs, "request_body", string(body))
+		return attrs
+	}
+
+	attrs = append(attrs,
+		"request_body_binary", true,
+		"request_body_sample_bytes", len(body),
+	)
+	return attrs
+}
+
+func isTextLogBody(body []byte, contentType string) bool {
+	if !utf8.Valid(body) || bytes.ContainsRune(body, '\x00') {
+		return false
+	}
+
+	contentType = strings.ToLower(contentType)
+	if strings.Contains(contentType, "grpc") ||
+		strings.Contains(contentType, "octet-stream") {
+		return false
+	}
+
+	return true
 }

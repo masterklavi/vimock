@@ -2,6 +2,8 @@
 <project version="4">
   <component name="VcsDirectoryMappings">
     <mapping directory="" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/autotests-druz" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/druz" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/wiremock" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/wiremock-graphql-extension" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/wiremock-grpc-extension" vcs="Git" />
