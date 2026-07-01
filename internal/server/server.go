@@ -169,6 +169,8 @@ type requestBodyLogCapture struct {
 	buffer    bytes.Buffer
 	truncated bool
 	readErr   error
+	eof       bool
+	closed    bool
 }
 
 func wrapRequestBodyForLogging(r *http.Request) *requestBodyLogCapture {
@@ -186,6 +188,9 @@ func (c *requestBodyLogCapture) Read(p []byte) (int, error) {
 	if n > 0 {
 		c.capture(p[:n])
 	}
+	if err == io.EOF {
+		c.eof = true
+	}
 	if err != nil && err != io.EOF {
 		c.readErr = err
 	}
@@ -193,11 +198,12 @@ func (c *requestBodyLogCapture) Read(p []byte) (int, error) {
 }
 
 func (c *requestBodyLogCapture) Close() error {
+	c.closed = true
 	return c.body.Close()
 }
 
 func (c *requestBodyLogCapture) ensureSample() {
-	if c == nil || c.truncated {
+	if c == nil || c.truncated || c.eof || c.closed {
 		return
 	}
 

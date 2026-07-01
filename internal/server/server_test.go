@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -100,6 +101,38 @@ func TestLoggingMiddlewareSamplesUnreadRequestBody(t *testing.T) {
 	}
 }
 
+func TestLoggingMiddlewareDoesNotReadClosedRequestBody(t *testing.T) {
+	var logOutput bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logOutput, nil))
+	handler := loggingMiddleware(logger, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read request body: %v", err)
+		}
+		if string(body) != `{"id":"closed"}` {
+			t.Fatalf("handler body = %q, want request body", body)
+		}
+		if err := r.Body.Close(); err != nil {
+			t.Fatalf("close request body: %v", err)
+		}
+		w.WriteHeader(http.StatusCreated)
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "/__admin/mappings", nil)
+	req.Header.Set("Content-Type", "application/json")
+	req.Body = &errorAfterCloseReadCloser{reader: strings.NewReader(`{"id":"closed"}`)}
+	resp := httptest.NewRecorder()
+	handler.ServeHTTP(resp, req)
+
+	logRecord := decodeLogRecord(t, logOutput.Bytes())
+	if logRecord["request_body"] != `{"id":"closed"}` {
+		t.Fatalf("logged request_body = %v, want request body", logRecord["request_body"])
+	}
+	if _, ok := logRecord["request_body_read_error"]; ok {
+		t.Fatalf("unexpected request_body_read_error = %v", logRecord["request_body_read_error"])
+	}
+}
+
 func request(t *testing.T, method, path string) *httptest.ResponseRecorder {
 	t.Helper()
 
@@ -118,4 +151,23 @@ func decodeLogRecord(t *testing.T, data []byte) map[string]any {
 		t.Fatalf("decode log record: %v\n%s", err, data)
 	}
 	return record
+}
+
+type errorAfterCloseReadCloser struct {
+	reader *strings.Reader
+	closed bool
+}
+
+var errReadAfterClose = errors.New("invalid read on closed body")
+
+func (r *errorAfterCloseReadCloser) Read(p []byte) (int, error) {
+	if r.closed {
+		return 0, errReadAfterClose
+	}
+	return r.reader.Read(p)
+}
+
+func (r *errorAfterCloseReadCloser) Close() error {
+	r.closed = true
+	return nil
 }
